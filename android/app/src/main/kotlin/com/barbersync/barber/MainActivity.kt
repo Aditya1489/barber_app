@@ -1,4 +1,4 @@
-package com.barbersync.barber_sync
+package com.barbersync.barber
 
 import io.flutter.embedding.android.FlutterActivity
 import io.flutter.embedding.engine.FlutterEngine

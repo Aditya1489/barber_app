@@ -9,6 +9,7 @@ import 'package:barber_sync/core/providers/theme_provider.dart';
 import 'package:barber_sync/core/providers/user_provider.dart';
 import 'package:barber_sync/services/api_service.dart';
 import 'package:barber_sync/models/models.dart';
+import 'package:barber_sync/services/notification_service.dart';
 
 class LoginScreen extends ConsumerStatefulWidget {
   const LoginScreen({super.key});
@@ -45,6 +46,7 @@ class _LoginScreenState extends ConsumerState<LoginScreen> with TickerProviderSt
 
         if (mounted) {
           if (userData.role != AppRole.customer) {
+            ref.read(notificationServiceProvider).startPolling(userData.id);
             context.go('/barber');
           } else {
             ScaffoldMessenger.of(context).showSnackBar(

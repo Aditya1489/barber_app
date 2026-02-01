@@ -63,9 +63,19 @@ class _ShopSettingsScreenState extends ConsumerState<ShopSettingsScreen> {
     try {
       final apiService = ref.read(apiServiceProvider);
       
-      // Merge current photos and new photos (upload logic assumed handled by backend or paths sent)
-      // For now, sending new local paths as "photos" along with old ones
-      final allPhotos = [..._currentPhotos, ..._newPhotos.map((f) => f.path)];
+      // 1. Upload new photos first
+      List<String> uploadedNewPhotos = [];
+      if (_newPhotos.isNotEmpty) {
+        for (var photo in _newPhotos) {
+          final url = await apiService.uploadFile(photo);
+          if (url != null) {
+            uploadedNewPhotos.add(url);
+          }
+        }
+      }
+
+      // 2. Merge current photos and uploaded new ones
+      final allPhotos = [..._currentPhotos, ...uploadedNewPhotos];
 
       final updateData = {
         'name': _nameController.text,
@@ -284,10 +294,12 @@ class _ShopSettingsScreenState extends ConsumerState<ShopSettingsScreen> {
     if (isLocal) {
         imageProvider = FileImage(File(path));
     } else {
-        if (path.startsWith('http')) {
-            imageProvider = NetworkImage(path);
+        final resolved = ref.read(apiServiceProvider).resolveUrl(path);
+        if (resolved != null && resolved.startsWith('http')) {
+            imageProvider = NetworkImage(resolved);
         } else {
-            imageProvider = FileImage(File(path));
+            // Fallback
+             imageProvider = FileImage(File(path));
         }
     }
 

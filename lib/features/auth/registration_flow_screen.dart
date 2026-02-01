@@ -156,8 +156,26 @@ class _RegistrationFlowScreenState extends ConsumerState<RegistrationFlowScreen>
     final apiService = ref.read(apiServiceProvider);
     final userProviderNotifier = ref.read(userProvider.notifier);
 
-    // 1. Register User
     try {
+      // AUTO-COLLECT: If user typed staff/service info but forgot to click "Add", do it for them
+      if (_selectedRole == 'owner') {
+        if (_staffNameController.text.isNotEmpty && _staffPhoneController.text.isNotEmpty) {
+          print("[REG_FLOW] Auto-collecting leftover staff: ${_staffNameController.text}");
+          _staff.add({
+            'name': _staffNameController.text,
+            'phone': _staffPhoneController.text,
+          });
+        }
+        if (_serviceNameController.text.isNotEmpty && _servicePriceController.text.isNotEmpty) {
+           print("[REG_FLOW] Auto-collecting leftover service: ${_serviceNameController.text}");
+          _services.add({
+            'name': _serviceNameController.text,
+            'price': double.tryParse(_servicePriceController.text) ?? 50.0,
+            'duration': int.tryParse(_serviceDurationController.text) ?? 30,
+          });
+        }
+      }
+
       final registerData = {
         'name': _nameController.text,
         'email': _emailController.text,
@@ -176,27 +194,69 @@ class _RegistrationFlowScreenState extends ConsumerState<RegistrationFlowScreen>
 
       // 2. Create Shop or Update Profile
       if (_selectedRole == 'owner') {
+        print("[REG_FLOW] Starting shop creation for owner...");
+        
+        // Upload shop photos
+        List<String> photoUrls = [];
+        if (_shopPhotos.isNotEmpty) {
+          print("[REG_FLOW] Uploading ${_shopPhotos.length} photos...");
+          for (var photo in _shopPhotos) {
+            final url = await apiService.uploadFile(photo);
+            if (url != null) {
+              photoUrls.add(url);
+            }
+          }
+        }
+        
+        print("[REG_FLOW] Services to send: $_services");
+        print("[REG_FLOW] Staff to send: $_staff");
+        
         final createData = {
           'name': _shopNameController.text,
           'address': _addressController.text,
           'description': "Professional Barber Shop",
           'coordinates': _detectedCoordinates ?? {'lat': 40.7128, 'lng': -74.0060},
           'ownerId': newUser.id,
-          'phone': newUser.phone,
+          'phone': newUser.phone ?? _phoneController.text,
           'email': newUser.email,
           'services': _services,
           'staff': _staff,
-          'photos': _shopPhotos.map((f) => f.path).toList(), // In real app, upload files first
+          'photos': photoUrls,
         };
-        await apiService.createShop(createData);
+        
+        print("[REG_FLOW] Creating shop with data: $createData");
+        final shopResult = await apiService.createShop(createData);
+        if (shopResult == null) {
+          throw Exception("Registration successful, but shop creation failed. Please try again from settings.");
+        }
       } else {
         // Handle staff profile completion
+        print("[REG_FLOW] Updating profile for staff...");
+        // Upload profile photo if exists
+        String? profilePhotoUrl;
+        if (_profilePhoto != null) {
+          print("[REG_FLOW] Uploading profile photo...");
+          profilePhotoUrl = await apiService.uploadFile(_profilePhoto!);
+        }
+
+        // Upload portfolio photos
+        List<String> portfolioUrls = [];
+        if (_portfolioPhotos.isNotEmpty) {
+          print("[REG_FLOW] Uploading ${_portfolioPhotos.length} portfolio photos...");
+          for (var photo in _portfolioPhotos) {
+            final url = await apiService.uploadFile(photo);
+            if (url != null) {
+              portfolioUrls.add(url);
+            }
+          }
+        }
+
         final updateData = {
           'experience': int.tryParse(_expController.text) ?? 0,
           'about': _aboutController.text,
           'location': _detectedCoordinates,
-          'profilePhoto': _profilePhoto?.path,
-          'portfolio': _portfolioPhotos.map((f) => f.path).toList(),
+          'profilePhoto': profilePhotoUrl,
+          'portfolio': portfolioUrls,
         };
         await apiService.updateProfile(newUser.id, updateData);
       }

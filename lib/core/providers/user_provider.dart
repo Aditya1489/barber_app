@@ -3,11 +3,11 @@ import 'package:barber_sync/models/models.dart';
 
 final userProvider = StateProvider<User>((ref) {
   return User(
-    id: "user1",
-    name: "Alex Johnson",
-    email: "alex.johnson@email.com",
-    phone: "+1 234 567 890",
-    role: AppRole.customer,
+    id: "8277e487-4624-489f-8f26-48a992e82cf4", // Real Sattu ID from DB
+    name: "Sattu",
+    email: "sattu@gmail.com",
+    phone: "+91 9876543210",
+    role: AppRole.barber,
     profilePhoto: "https://picsum.photos/200/200?random=100",
     permissions: {
       "location": true,

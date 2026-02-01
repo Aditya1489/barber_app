@@ -9,6 +9,7 @@ enum AppointmentStatus {
   accepted,
   cancelled,
   completed,
+  noShow,
 }
 
 class Service {
@@ -124,6 +125,8 @@ class Appointment {
   final String shopId;
   final String staffId;
   final String customerId;
+  final String? customerName;
+  final String? customerPhoto;
   final List<String> services;
   final String date;
   final String timeSlot;
@@ -132,11 +135,15 @@ class Appointment {
   final int totalDuration;
   final String bookedAt;
 
+  final String? privateNotes;
+
   Appointment({
     required this.id,
     required this.shopId,
     required this.staffId,
     required this.customerId,
+    this.customerName,
+    this.customerPhoto,
     required this.services,
     required this.date,
     required this.timeSlot,
@@ -144,6 +151,7 @@ class Appointment {
     required this.totalAmount,
     required this.totalDuration,
     required this.bookedAt,
+    this.privateNotes,
   });
 
   factory Appointment.fromJson(Map<String, dynamic> json) {
@@ -152,13 +160,22 @@ class Appointment {
       shopId: json['shopId'],
       staffId: json['staffId'],
       customerId: json['customerId'],
+      customerName: json['customerName'],
+      customerPhoto: json['customerPhoto'],
       services: List<String>.from(json['services']),
       date: json['date'],
       timeSlot: json['timeSlot'],
-      status: AppointmentStatus.values.firstWhere((e) => e.name.toUpperCase() == json['status']),
+      status: AppointmentStatus.values.firstWhere(
+        (e) {
+          final normalizedName = e.name.replaceAll(RegExp(r'(?=[A-Z])'), '_').toUpperCase();
+          return normalizedName == (json['status'] as String).replaceAll(' ', '_').toUpperCase();
+        },
+        orElse: () => AppointmentStatus.pending,
+      ),
       totalAmount: json['totalAmount'].toDouble(),
       totalDuration: json['totalDuration'],
       bookedAt: json['bookedAt'],
+      privateNotes: json['privateNotes'],
     );
   }
 }

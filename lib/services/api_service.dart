@@ -7,10 +7,28 @@ final apiServiceProvider = Provider((ref) => ApiService());
 
 class ApiService {
   final Dio _dio = Dio(BaseOptions(
-    baseUrl: Platform.isAndroid ? 'http://10.0.2.2:8000/api/v1' : 'http://localhost:8000/api/v1',
+    baseUrl: Platform.isAndroid ? 'http://10.0.2.2:8000/api/v1' : 'http://192.168.0.114:8000/api/v1',
     connectTimeout: const Duration(seconds: 5),
     receiveTimeout: const Duration(seconds: 3),
   ));
+  
+  String get baseUrl => _dio.options.baseUrl.replaceAll('/api/v1', '');
+
+  String? resolveUrl(String? path) {
+    if (path == null || path.isEmpty) return null;
+    if (path.startsWith('http')) return path;
+    if (path.startsWith('assets/')) return null;
+    
+    // DON'T resolve if it's an absolute local path (starts with /data, /Users, /var etc)
+    // This prevents 404s when local paths accidentally leak into the database
+    if (path.startsWith('/data/') || path.startsWith('/Users/') || path.startsWith('/var/')) {
+      return path; 
+    }
+    
+    // Ensure relative paths from server are full URLs
+    final cleanPath = path.startsWith('/') ? path : '/$path';
+    return '$baseUrl$cleanPath';
+  }
 
   Future<Map<String, dynamic>?> login(String email, String password) async {
     try {
@@ -37,6 +55,23 @@ class ApiService {
       return null;
     } catch (e) {
       print('Error registering: $e');
+      return null;
+    }
+  }
+
+  Future<String?> uploadFile(File file) async {
+    try {
+      String fileName = file.path.split('/').last;
+      FormData formData = FormData.fromMap({
+        "file": await MultipartFile.fromFile(file.path, filename: fileName),
+      });
+      final response = await _dio.post('/uploads', data: formData);
+      if (response.statusCode == 200) {
+        return response.data['url'];
+      }
+      return null;
+    } catch (e) {
+      print('Error uploading file: $e');
       return null;
     }
   }
@@ -72,9 +107,13 @@ class ApiService {
     }
   }
 
-  Future<List<Appointment>> getAppointments(String userId) async {
+  Future<List<Appointment>> getAppointments({String? customerId, String? staffId, String? shopId}) async {
     try {
-      final response = await _dio.get('/appointments', queryParameters: {'user_id': userId});
+      final response = await _dio.get('/bookings/', queryParameters: {
+        if (customerId != null) 'customer_id': customerId,
+        if (staffId != null) 'staff_id': staffId,
+        if (shopId != null) 'shop_id': shopId,
+      });
       if (response.statusCode == 200) {
         final List data = response.data;
         return data.map((e) => Appointment.fromJson(e)).toList();
@@ -83,6 +122,18 @@ class ApiService {
     } catch (e) {
       print('Error fetching appointments: $e');
       return [];
+    }
+  }
+
+  Future<bool> updateBookingStatus(String bookingId, String status) async {
+    try {
+      final response = await _dio.patch('/bookings/$bookingId/status', queryParameters: {
+        'new_status': status,
+      });
+      return response.statusCode == 200;
+    } catch (e) {
+      print('Error updating booking status: $e');
+      return false;
     }
   }
 
@@ -323,6 +374,33 @@ class ApiService {
       await _dio.put('/notifications/$notifId/read');
     } catch (e) {
       print('Error marking notification read: $e');
+    }
+  }
+
+  // Staff Reviews
+  Future<List<dynamic>> getStaffReviews(String staffId) async {
+    try {
+      final response = await _dio.get('/reviews/staff/$staffId');
+      if (response.statusCode == 200) {
+        return response.data as List<dynamic>;
+      }
+      return [];
+    } catch (e) {
+      print('Error fetching staff reviews: $e');
+      return [];
+    }
+  }
+
+  Future<Map<String, dynamic>?> getStaffReviewStats(String staffId) async {
+    try {
+      final response = await _dio.get('/reviews/staff/$staffId/stats');
+      if (response.statusCode == 200) {
+        return response.data;
+      }
+      return null;
+    } catch (e) {
+      print('Error fetching staff review stats: $e');
+      return null;
     }
   }
 }
