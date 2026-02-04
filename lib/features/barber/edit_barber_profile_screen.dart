@@ -127,14 +127,25 @@ class _EditBarberProfileScreenState extends ConsumerState<EditBarberProfileScree
   }
 
   Future<void> _pickImage() async {
-    HapticFeedback.mediumImpact();
-    final XFile? image = await _picker.pickImage(source: ImageSource.gallery);
-    if (image != null) {
-      setState(() {
-        _pickedProfileImage = File(image.path);
-        _removeProfilePhoto = false;
-        _hasChanges = true;
-      });
+    try {
+      HapticFeedback.mediumImpact();
+      final XFile? image = await _picker.pickImage(source: ImageSource.gallery);
+      if (image != null) {
+        setState(() {
+          _pickedProfileImage = File(image.path);
+          _removeProfilePhoto = false;
+          _hasChanges = true;
+        });
+      }
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text("Failed to pick image: $e"),
+            backgroundColor: Colors.red,
+          ),
+        );
+      }
     }
   }
 
@@ -148,13 +159,40 @@ class _EditBarberProfileScreenState extends ConsumerState<EditBarberProfileScree
   }
 
   Future<void> _pickPortfolioImages() async {
+    final totalImages = _existingPortfolioImages.length + _pickedPortfolioImages.length;
+    
+    if (totalImages >= 10) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text("Maximum 10 portfolio images allowed"),
+            backgroundColor: Colors.orange,
+          ),
+        );
+      }
+      return;
+    }
+    
     HapticFeedback.lightImpact();
     final List<XFile> images = await _picker.pickMultiImage();
+    
     if (images.isNotEmpty) {
+      final remainingSlots = 10 - totalImages;
+      final imagesToAdd = images.take(remainingSlots).toList();
+      
       setState(() {
-        _pickedPortfolioImages.addAll(images.map((x) => File(x.path)));
+        _pickedPortfolioImages.addAll(imagesToAdd.map((x) => File(x.path)));
         _hasChanges = true;
       });
+      
+      if (images.length > remainingSlots && mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text("Added $remainingSlots images. Maximum limit reached."),
+            backgroundColor: Colors.orange,
+          ),
+        );
+      }
     }
   }
   
@@ -288,69 +326,55 @@ class _EditBarberProfileScreenState extends ConsumerState<EditBarberProfileScree
     );
   }
 
-  double _calculateProfileStrength() {
-    double strength = 0;
-    
-    print('[EDIT_PROFILE_STRENGTH] Description length: ${_descController.text.length}');
-    print('[EDIT_PROFILE_STRENGTH] Experience: $_experience');
-    print('[EDIT_PROFILE_STRENGTH] Remove photo flag: $_removeProfilePhoto');
-    print('[EDIT_PROFILE_STRENGTH] Picked profile image: ${_pickedProfileImage != null}');
-    print('[EDIT_PROFILE_STRENGTH] Widget photo: ${widget.staffBasicInfo['photo']}');
-    print('[EDIT_PROFILE_STRENGTH] Widget imageUrl: ${widget.staffBasicInfo['imageUrl']}');
-    print('[EDIT_PROFILE_STRENGTH] Existing portfolio: ${_existingPortfolioImages.length}');
-    print('[EDIT_PROFILE_STRENGTH] Picked portfolio: ${_pickedPortfolioImages.length}');
-    print('[EDIT_PROFILE_STRENGTH] Selected skills: ${_selectedSkills.length}');
-    
-    // Check for profile photo - don't count if user removed it or if it's empty
+  Map<String, dynamic> _calculateProfileStrengthData() {
+    bool hasPhoto = false;
+    bool hasBio = false;
+    bool hasExp = false;
+    bool hasPortfolio = false;
+    bool hasSkills = false;
+
+    // Check for profile photo
     final photoUrl = widget.staffBasicInfo['photo']?.toString() ?? '';
     final imageUrl = widget.staffBasicInfo['imageUrl']?.toString() ?? '';
-    bool hasProfilePhoto = !_removeProfilePhoto && 
-                          (_pickedProfileImage != null || 
-                           (photoUrl.isNotEmpty && photoUrl != 'null') ||
-                           (imageUrl.isNotEmpty && imageUrl != 'null'));
-    if (hasProfilePhoto) {
-      strength += 0.2;
-      print('[EDIT_PROFILE_STRENGTH] ✅ Profile photo (+20%)');
-    } else {
-      print('[EDIT_PROFILE_STRENGTH] ❌ No profile photo');
-    }
+    hasPhoto = !_removeProfilePhoto && 
+              (_pickedProfileImage != null || 
+               (photoUrl.isNotEmpty && photoUrl != 'null') ||
+               (imageUrl.isNotEmpty && imageUrl != 'null'));
     
-    if (_descController.text.length > 20) {
-      strength += 0.2;
-      print('[EDIT_PROFILE_STRENGTH] ✅ Description (+20%)');
-    } else {
-      print('[EDIT_PROFILE_STRENGTH] ❌ No description');
-    }
+    // Check for bio
+    hasBio = _descController.text.length > 20;
+
+    // Check for experience
+    hasExp = _experience > 0;
+
+    // Check for portfolio
+    hasPortfolio = _existingPortfolioImages.isNotEmpty || _pickedPortfolioImages.isNotEmpty;
+
+    // Check for skills
+    hasSkills = _selectedSkills.isNotEmpty;
+
+    double strength = 0;
+    if (hasPhoto) strength += 0.2;
+    if (hasBio) strength += 0.2;
+    if (hasExp) strength += 0.2;
+    if (hasPortfolio) strength += 0.2;
+    if (hasSkills) strength += 0.2;
     
-    if (_experience > 0) {
-      strength += 0.2;
-      print('[EDIT_PROFILE_STRENGTH] ✅ Experience (+20%)');
-    } else {
-      print('[EDIT_PROFILE_STRENGTH] ❌ No experience');
-    }
-    
-    if (_existingPortfolioImages.isNotEmpty || _pickedPortfolioImages.isNotEmpty) {
-      strength += 0.2;
-      print('[EDIT_PROFILE_STRENGTH] ✅ Portfolio (+20%)');
-    } else {
-      print('[EDIT_PROFILE_STRENGTH] ❌ No portfolio');
-    }
-    
-    if (_selectedSkills.isNotEmpty) {
-      strength += 0.2;
-      print('[EDIT_PROFILE_STRENGTH] ✅ Skills (+20%)');
-    } else {
-      print('[EDIT_PROFILE_STRENGTH] ❌ No skills');
-    }
-    
-    print('[EDIT_PROFILE_STRENGTH] Total strength: ${(strength * 100).round()}%');
-    return strength;
+    return {
+      'strength': strength,
+      'hasPhoto': hasPhoto,
+      'hasBio': hasBio,
+      'hasExp': hasExp,
+      'hasPortfolio': hasPortfolio,
+      'hasSkills': hasSkills,
+    };
   }
 
   @override
   Widget build(BuildContext context) {
     final isDark = ref.watch(themeProvider);
-    final strength = _calculateProfileStrength();
+    final strengthData = _calculateProfileStrengthData();
+    final strength = strengthData['strength'] as double;
 
     return Scaffold(
       floatingActionButton: _hasChanges ? FloatingActionButton.extended(
@@ -378,7 +402,7 @@ class _EditBarberProfileScreenState extends ConsumerState<EditBarberProfileScree
                           child: Column(
                             crossAxisAlignment: CrossAxisAlignment.start,
                             children: [
-                              _buildProfileStrengthMeter(isDark, strength),
+                              _buildProfileStrengthMeter(isDark, strengthData),
                               const SizedBox(height: 32),
                               
                               // Profile Photo Section
@@ -419,7 +443,8 @@ class _EditBarberProfileScreenState extends ConsumerState<EditBarberProfileScree
     );
   }
 
-  Widget _buildProfileStrengthMeter(bool isDark, double strength) {
+  Widget _buildProfileStrengthMeter(bool isDark, Map<String, dynamic> data) {
+    final strength = data['strength'] as double;
     return Container(
       padding: const EdgeInsets.all(20),
       decoration: BoxDecoration(
@@ -447,9 +472,11 @@ class _EditBarberProfileScreenState extends ConsumerState<EditBarberProfileScree
             ),
           ),
           const SizedBox(height: 16),
-          _buildChecklistItem(strength >= 0.2, "Name & Identity"),
-          _buildChecklistItem(strength >= 0.4, "Quality Bio / About"),
-          _buildChecklistItem(strength >= 0.8, "Professional Portfolio"),
+          _buildChecklistItem(data['hasPhoto'], "Profile Photo"),
+          _buildChecklistItem(data['hasBio'], "Quality Bio / About"),
+          _buildChecklistItem(data['hasExp'], "Experience Level"),
+          _buildChecklistItem(data['hasPortfolio'], "Professional Portfolio"),
+          _buildChecklistItem(data['hasSkills'], "Skills & Expertise"),
         ],
       ),
     ).animate().fadeIn();
@@ -607,13 +634,18 @@ class _EditBarberProfileScreenState extends ConsumerState<EditBarberProfileScree
               ),
               IconButton(
                 onPressed: () {
-                  setState(() {
-                    _experience++;
-                    _hasChanges = true;
-                  });
-                  HapticFeedback.lightImpact();
+                  if (_experience < 50) {  // Maximum 50 years
+                    setState(() {
+                      _experience++;
+                      _hasChanges = true;
+                    });
+                    HapticFeedback.lightImpact();
+                  }
                 },
-                icon: const Icon(LucideIcons.plusCircle, color: AppTheme.emerald),
+                icon: Icon(
+                  LucideIcons.plusCircle,
+                  color: _experience >= 50 ? Colors.grey : AppTheme.emerald,
+                ),
               ),
             ],
           ),

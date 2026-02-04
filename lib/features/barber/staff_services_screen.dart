@@ -238,71 +238,83 @@ class _StaffServicesScreenState extends ConsumerState<StaffServicesScreen> {
                                   ),
                                   child: Theme(
                                     data: Theme.of(context).copyWith(canvasColor: Colors.transparent),
-                                    child: ListTile(
-                                      contentPadding: const EdgeInsets.all(16),
-                                      leading: imageUrl != null
-                                          ? ClipRRect(
-                                              borderRadius: BorderRadius.circular(16),
-                                              child: Image.network(imageUrl, width: 52, height: 52, fit: BoxFit.cover)
-                                            )
-                                          : _getServiceIcon(service['name'], isDark),
-                                      title: Text(
-                                        service['name'],
-                                        style: const TextStyle(fontWeight: FontWeight.w900, fontSize: 16),
-                                      ),
-                                      subtitle: Column(
+                                    child: Padding(
+                                      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+                                      child: Row(
                                         crossAxisAlignment: CrossAxisAlignment.start,
                                         children: [
-                                          Text(
-                                            "${service['name'].toString().split(' ').first} · ${service['price'] > 50 ? 'Premium' : 'Standard'}",
-                                            style: TextStyle(fontSize: 10, color: (isDark ? Colors.white : Colors.black).withOpacity(0.4), fontWeight: FontWeight.bold),
-                                          ),
-                                          const SizedBox(height: 8),
-                                          Row(
-                                            children: [
-                                              Icon(LucideIcons.clock, size: 12, color: (isDark ? Colors.white : Colors.black).withOpacity(0.3)),
-                                              const SizedBox(width: 4),
-                                              Text("${service['duration']}m", style: TextStyle(fontSize: 11, color: (isDark ? Colors.white : Colors.black).withOpacity(0.4))),
-                                              const SizedBox(width: 12),
-                                              Text("\$${service['price']}", style: const TextStyle(fontSize: 14, fontWeight: FontWeight.w900, color: AppTheme.emerald)),
-                                            ],
-                                          ),
-                                        ],
-                                      ),
-                                      trailing: Row(
-                                        mainAxisSize: MainAxisSize.min,
-                                        children: [
-                                          Column(
-                                            mainAxisAlignment: MainAxisAlignment.center,
-                                            crossAxisAlignment: CrossAxisAlignment.end,
-                                            children: [
-                                              Switch.adaptive(
-                                                value: isSelected,
-                                                activeColor: AppTheme.emerald,
-                                                onChanged: (val) {
-                                                  setState(() {
-                                                    if (val) {
-                                                      _selectedServiceIds.add(service['id'] as String);
-                                                    } else {
-                                                      _selectedServiceIds.remove(service['id']);
-                                                    }
-                                                    HapticFeedback.selectionClick();
-                                                  });
-                                                },
-                                              ),
-                                              Text(
-                                                isSelected ? "AVAILABLE" : "DISABLED",
-                                                style: TextStyle(
-                                                  fontSize: 8, 
-                                                  fontWeight: FontWeight.w900, 
-                                                  color: isSelected ? AppTheme.emerald : Colors.grey,
-                                                  letterSpacing: 0.5
+                                          imageUrl != null
+                                              ? ClipRRect(
+                                                  borderRadius: BorderRadius.circular(16),
+                                                  child: Image.network(imageUrl, width: 52, height: 52, fit: BoxFit.cover)
+                                                )
+                                              : _getServiceIcon(service['name'], isDark),
+                                          const SizedBox(width: 16),
+                                          Expanded(
+                                            child: Column(
+                                              mainAxisSize: MainAxisSize.min,
+                                              crossAxisAlignment: CrossAxisAlignment.start,
+                                              children: [
+                                                Text(
+                                                  service['name'],
+                                                  style: const TextStyle(fontWeight: FontWeight.w900, fontSize: 16),
                                                 ),
+                                                const SizedBox(height: 4),
+                                                Text(
+                                                  "${service['name'].toString().split(' ').first} · ${service['price'] > 50 ? 'Premium' : 'Standard'}",
+                                                  style: TextStyle(fontSize: 10, color: (isDark ? Colors.white : Colors.black).withOpacity(0.4), fontWeight: FontWeight.bold),
+                                                ),
+                                                const SizedBox(height: 4),
+                                                Row(
+                                                  children: [
+                                                    Icon(LucideIcons.clock, size: 12, color: (isDark ? Colors.white : Colors.black).withOpacity(0.3)),
+                                                    const SizedBox(width: 4),
+                                                    Text("${service['duration']}m", style: TextStyle(fontSize: 11, color: (isDark ? Colors.white : Colors.black).withOpacity(0.4))),
+                                                    const SizedBox(width: 12),
+                                                    Text("\$${service['price']}", style: const TextStyle(fontSize: 14, fontWeight: FontWeight.w900, color: AppTheme.emerald)),
+                                                  ],
+                                                ),
+                                              ],
+                                            ),
+                                          ),
+                                          Row(
+                                            mainAxisSize: MainAxisSize.min,
+                                            children: [
+                                              Column(
+                                                mainAxisSize: MainAxisSize.min,
+                                                mainAxisAlignment: MainAxisAlignment.center,
+                                                crossAxisAlignment: CrossAxisAlignment.end,
+                                                children: [
+                                                  Switch.adaptive(
+                                                    value: isSelected,
+                                                    activeColor: AppTheme.emerald,
+                                                    onChanged: (val) {
+                                                      setState(() {
+                                                        if (val) {
+                                                          _selectedServiceIds.add(service['id'] as String);
+                                                        } else {
+                                                          _selectedServiceIds.remove(service['id']);
+                                                        }
+                                                        HapticFeedback.selectionClick();
+                                                      });
+                                                    },
+                                                  ),
+                                                  const SizedBox(height: 2),
+                                                  Text(
+                                                    isSelected ? "AVAILABLE" : "DISABLED",
+                                                    style: TextStyle(
+                                                      fontSize: 8, 
+                                                      fontWeight: FontWeight.w900, 
+                                                      color: isSelected ? AppTheme.emerald : Colors.grey,
+                                                      letterSpacing: 0.5
+                                                    ),
+                                                  ),
+                                                ],
                                               ),
+                                              const SizedBox(width: 8),
+                                              Icon(LucideIcons.gripVertical, size: 20, color: (isDark ? Colors.white54 : Colors.grey.withOpacity(0.3))),
                                             ],
                                           ),
-                                          const SizedBox(width: 8),
-                                          Icon(LucideIcons.gripVertical, size: 20, color: (isDark ? Colors.white54 : Colors.grey.withOpacity(0.3))),
                                         ],
                                       ),
                                     ),

@@ -31,14 +31,26 @@ class _StaffPreviewScreenState extends ConsumerState<StaffPreviewScreen> {
   Future<void> _loadProfile() async {
     final apiService = ref.read(apiServiceProvider);
     try {
-      final profile = await apiService.getStaffProfile(widget.staffData['id'] ?? widget.staffData['staffId']);
+      final staffId = widget.staffData['id'] ?? widget.staffData['staffId'];
+      debugPrint('[StaffPreview] Loading profile for staffId: $staffId');
+      debugPrint('[StaffPreview] Initial staffData: ${widget.staffData.keys.toList()}');
+      
+      final profile = await apiService.getStaffProfile(staffId);
+      debugPrint('[StaffPreview] Profile loaded: ${profile != null}');
+      if (profile != null) {
+        debugPrint('[StaffPreview] Profile keys: ${profile.keys.toList()}');
+        debugPrint('[StaffPreview] Profile workPhotos: ${profile['workPhotos']}');
+      }
+      
       if (mounted) {
         setState(() {
           _fullProfile = profile;
           _isLoading = false;
         });
       }
-    } catch (e) {
+    } catch (e, stackTrace) {
+      debugPrint('[StaffPreview] Error loading profile: $e');
+      debugPrint('[StaffPreview] Stack trace: $stackTrace');
       if (mounted) setState(() => _isLoading = false);
     }
   }
@@ -80,7 +92,13 @@ class _StaffPreviewScreenState extends ConsumerState<StaffPreviewScreen> {
                 const SizedBox(height: 24),
                 _buildAboutSection(isDark, data),
                 const SizedBox(height: 32),
-                _buildPortfolioSection(isDark, data),
+                // Always show portfolio section - it handles empty state internally
+                Builder(
+                  builder: (context) {
+                    debugPrint('[Portfolio] Rendering portfolio section in widget tree');
+                    return _buildPortfolioSection(isDark, data);
+                  },
+                ),
                 const SizedBox(height: 24),
                 _buildSoftCTA(isDark, data),
             ],
@@ -379,27 +397,110 @@ class _StaffPreviewScreenState extends ConsumerState<StaffPreviewScreen> {
     ).animate().fadeIn(delay: 300.ms);
   }
 
+  List<String> _parseSkills(dynamic skillsData) {
+    try {
+      if (skillsData == null) {
+        return [];
+      }
+      
+      if (skillsData is List) {
+        return skillsData.map((e) => e.toString()).where((e) => e.isNotEmpty).toList();
+      }
+      
+      if (skillsData is String) {
+        final trimmed = skillsData.trim();
+        if (trimmed.isEmpty || trimmed == 'null') {
+          return [];
+        }
+        return trimmed.split(',').map((e) => e.trim()).where((e) => e.isNotEmpty).toList();
+      }
+      
+      return [skillsData.toString()];
+    } catch (e) {
+      debugPrint('Error parsing skills: $e');
+      return [];
+    }
+  }
+
+  List<String> _parseWorkPhotos(dynamic workPhotosData) {
+    try {
+      if (workPhotosData == null) {
+        return [];
+      }
+      
+      if (workPhotosData is List) {
+        // Already a list, convert to List<String>
+        return workPhotosData.map((e) => e.toString()).where((e) => e.isNotEmpty).toList();
+      }
+      
+      if (workPhotosData is String) {
+        // String - could be JSON array or comma-separated
+        final trimmed = workPhotosData.trim();
+        if (trimmed.isEmpty || trimmed == 'null' || trimmed == '[]') {
+          return [];
+        }
+        
+        // Try parsing as JSON array string first
+        if (trimmed.startsWith('[') && trimmed.endsWith(']')) {
+          try {
+            final cleaned = trimmed.substring(1, trimmed.length - 1)
+                .replaceAll('"', '')
+                .replaceAll("'", '');
+            final items = cleaned.split(',').map((e) => e.trim()).where((e) => e.isNotEmpty).toList();
+            return items;
+          } catch (e) {
+            // If parsing fails, return as single item if not empty
+            return trimmed.length > 2 ? [trimmed] : [];
+          }
+        } else {
+          // Comma-separated string
+          return trimmed.split(',').map((e) => e.trim()).where((e) => e.isNotEmpty).toList();
+        }
+      }
+      
+      // For any other type, try to convert to string
+      final stringValue = workPhotosData.toString();
+      if (stringValue.isEmpty || stringValue == 'null') {
+        return [];
+      }
+      return [stringValue];
+    } catch (e) {
+      // If anything goes wrong, return empty list to prevent crashes
+      debugPrint('Error parsing workPhotos: $e');
+      return [];
+    }
+  }
+
   Widget _buildPortfolioSection(bool isDark, Map<String, dynamic> data) {
-    final photos = data['workPhotos'] as List? ?? [];
-    
-    return Column(
+    try {
+      debugPrint('[Portfolio] Building portfolio section');
+      debugPrint('[Portfolio] Data keys: ${data.keys.toList()}');
+      debugPrint('[Portfolio] workPhotos value: ${data['workPhotos']}');
+      debugPrint('[Portfolio] workPhotos type: ${data['workPhotos'].runtimeType}');
+      
+      final photos = _parseWorkPhotos(data['workPhotos']);
+      debugPrint('[Portfolio] Parsed photos count: ${photos.length}');
+      debugPrint('[Portfolio] Parsed photos: $photos');
+      
+      return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
+      mainAxisSize: MainAxisSize.min,
       children: [
         Padding(
           padding: const EdgeInsets.symmetric(horizontal: 24),
           child: Row(
             mainAxisAlignment: MainAxisAlignment.spaceBetween,
             children: [
-              Text("Work Portfolio".toUpperCase(), style: const TextStyle(fontSize: 11, fontWeight: FontWeight.w900, color: Colors.grey, letterSpacing: 2)),
-              if (photos.isNotEmpty) Text("${photos.length} Photos", style: const TextStyle(fontSize: 10, color: Colors.grey)),
+              Text("Work Portfolio".toUpperCase(), style: TextStyle(fontSize: 11, fontWeight: FontWeight.w900, color: isDark ? Colors.grey : Colors.black87, letterSpacing: 2)),
+              if (photos.isNotEmpty) Text("${photos.length} Photos", style: TextStyle(fontSize: 10, color: isDark ? Colors.grey : Colors.black54)),
             ],
           ),
         ),
         const SizedBox(height: 16),
         if (photos.isEmpty)
-           const Padding(
-             padding: EdgeInsets.symmetric(horizontal: 24),
-             child: Text("No portfolio photos yet.", style: TextStyle(color: Colors.grey, fontSize: 13)),
+           Padding(
+             padding: const EdgeInsets.symmetric(horizontal: 24),
+             child: Text("No portfolio photos yet.", style: TextStyle(color: isDark ? Colors.grey : Colors.black54, fontSize: 13)),
            )
         else
           SizedBox(
@@ -410,36 +511,84 @@ class _StaffPreviewScreenState extends ConsumerState<StaffPreviewScreen> {
               itemCount: photos.length,
               separatorBuilder: (c, i) => const SizedBox(width: 12),
               itemBuilder: (context, index) {
-                final photo = photos[index].toString();
-                final resolved = ref.read(apiServiceProvider).resolveUrl(photo);
-                if (resolved == null) return const SizedBox();
+                try {
+                  if (index >= photos.length) {
+                    debugPrint('[Portfolio] Index $index out of bounds (length: ${photos.length})');
+                    return const SizedBox();
+                  }
+                  
+                  final photo = photos[index];
+                  if (photo.isEmpty) {
+                    debugPrint('[Portfolio] Photo at index $index is empty');
+                    return const SizedBox();
+                  }
+                  
+                  debugPrint('[Portfolio] Processing photo $index: $photo');
+                  final resolved = ref.read(apiServiceProvider).resolveUrl(photo);
+                  debugPrint('[Portfolio] Resolved URL: $resolved');
+                  
+                  if (resolved == null || resolved.isEmpty) {
+                    debugPrint('[Portfolio] Resolved URL is null or empty');
+                    return const SizedBox();
+                  }
 
-                // Mocking pinning and tagging for preview
-                bool isPinned = index == 0; 
+                  // Mocking pinning and tagging for preview
+                  bool isPinned = index == 0; 
 
-                return Container(
-                  width: 140,
-                  decoration: BoxDecoration(
-                    borderRadius: BorderRadius.circular(16),
-                    border: isPinned ? Border.all(color: AppTheme.emerald, width: 2) : null,
-                  ),
-                  clipBehavior: Clip.antiAlias,
-                  child: Stack(
-                    fit: StackFit.expand,
-                    children: [
-                      resolved.startsWith('http')
-                          ? Image.network(resolved, fit: BoxFit.cover)
-                          : Image.file(File(resolved), fit: BoxFit.cover),
+                  return Container(
+                    width: 140,
+                    decoration: BoxDecoration(
+                      borderRadius: BorderRadius.circular(16),
+                      border: isPinned ? Border.all(color: AppTheme.emerald, width: 2) : null,
+                    ),
+                    clipBehavior: Clip.antiAlias,
+                    child: Stack(
+                      fit: StackFit.expand,
+                      children: [
+                        resolved.startsWith('http')
+                            ? Image.network(
+                                resolved,
+                                fit: BoxFit.cover,
+                                errorBuilder: (context, error, stackTrace) {
+                                  return Container(
+                                    color: Colors.grey[300],
+                                    child: const Icon(Icons.broken_image, color: Colors.grey),
+                                  );
+                                },
+                                loadingBuilder: (context, child, loadingProgress) {
+                                  if (loadingProgress == null) return child;
+                                  return Container(
+                                    color: Colors.grey[200],
+                                    child: const Center(child: CircularProgressIndicator(strokeWidth: 2)),
+                                  );
+                                },
+                              )
+                            : Image.file(
+                                File(resolved),
+                                fit: BoxFit.cover,
+                                errorBuilder: (context, error, stackTrace) {
+                                  return Container(
+                                    color: Colors.grey[300],
+                                    child: const Icon(Icons.broken_image, color: Colors.grey),
+                                  );
+                                },
+                              ),
                       // Service Tag
                       Positioned(
                         bottom: 12, left: 12,
-                        child: Container(
-                          padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
-                          decoration: BoxDecoration(color: Colors.black.withOpacity(0.6), borderRadius: BorderRadius.circular(12)),
-                          child: Text(
-                            (data['skills'] as List?)?.take(2).join(' · ') ?? 'Portfolio',
-                            style: const TextStyle(color: Colors.white, fontSize: 10, fontWeight: FontWeight.bold),
-                          ),
+                        child: Builder(
+                          builder: (context) {
+                            final skills = _parseSkills(data['skills']);
+                            final skillsText = skills.take(2).join(' · ');
+                            return Container(
+                              padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+                              decoration: BoxDecoration(color: Colors.black.withOpacity(0.6), borderRadius: BorderRadius.circular(12)),
+                              child: Text(
+                                skillsText.isEmpty ? 'Portfolio' : skillsText,
+                                style: const TextStyle(color: Colors.white, fontSize: 10, fontWeight: FontWeight.bold),
+                              ),
+                            );
+                          },
                         ),
                       ),
                       if (isPinned)
@@ -454,11 +603,34 @@ class _StaffPreviewScreenState extends ConsumerState<StaffPreviewScreen> {
                     ],
                   ),
                 );
+                } catch (e) {
+                  debugPrint('Error building portfolio item at index $index: $e');
+                  return const SizedBox();
+                }
               },
             ),
           ),
       ],
-    ).animate().fadeIn(delay: 400.ms);
+    );
+    } catch (e, stackTrace) {
+      debugPrint('Error building portfolio section: $e');
+      debugPrint('Stack trace: $stackTrace');
+      // Return a safe fallback widget instead of crashing - ALWAYS show the section
+      return Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 24),
+            child: Text("Work Portfolio".toUpperCase(), style: const TextStyle(fontSize: 11, fontWeight: FontWeight.w900, color: Colors.grey, letterSpacing: 2)),
+          ),
+          const SizedBox(height: 16),
+          Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 24),
+            child: Text("Unable to load portfolio photos. Error: $e", style: const TextStyle(color: Colors.grey, fontSize: 13)),
+          ),
+        ],
+      );
+    }
   }
 
   Widget _buildReviewsSection(bool isDark, Map<String, dynamic> data) {

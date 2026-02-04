@@ -25,10 +25,9 @@ class BarberDashboardScreen extends ConsumerStatefulWidget {
 
 class _BarberDashboardScreenState extends ConsumerState<BarberDashboardScreen> {
   int _currentIndex = 0;
-  String _filterPeriod = 'Daily';
   String _sortBy = 'Recently Booked'; // Default sort
   List<String> _selectedServiceFilters = []; // New service filter
-  String _activeTaskTab = 'Requests'; // Default tab in Tasks
+  String _activeTaskTab = 'Requests'; // Default tab in Appointments
   
   Map<String, dynamic>? _analytics;
   List<Appointment> _appointments = [];
@@ -65,7 +64,7 @@ class _BarberDashboardScreenState extends ConsumerState<BarberDashboardScreen> {
     try {
       if (user.role == AppRole.owner) {
         final results = await Future.wait([
-          apiService.getOwnerAnalytics(user.id, period: _filterPeriod),
+          apiService.getOwnerAnalytics(user.id, period: 'Daily'),
           apiService.getShopsByOwner(user.id),
         ]);
         
@@ -74,7 +73,10 @@ class _BarberDashboardScreenState extends ConsumerState<BarberDashboardScreen> {
         
         if (shops.isNotEmpty) {
           _shopProfile = Map<String, dynamic>.from(shops.first as Map);
-          _appointments = await apiService.getAppointments(shopId: _shopProfile!['id']);
+          final shopId = _shopProfile?['id'] as String?;
+          if (shopId != null) {
+            _appointments = await apiService.getAppointments(shopId: shopId, limit: 500);
+          }
         }
       } else {
         // Barber role
@@ -85,8 +87,8 @@ class _BarberDashboardScreenState extends ConsumerState<BarberDashboardScreen> {
         if (_staffProfile != null) {
           final staffId = _staffProfile!['id'];
           final results = await Future.wait([
-            apiService.getStaffEarnings(user.id, period: _filterPeriod),
-            apiService.getAppointments(staffId: staffId),
+            apiService.getStaffEarnings(user.id, period: 'Daily'),
+            apiService.getAppointments(staffId: staffId, limit: 500),
           ]);
           _analytics = results[0] as Map<String, dynamic>?;
           _appointments = results[1] as List<Appointment>;
@@ -265,8 +267,94 @@ class _BarberDashboardScreenState extends ConsumerState<BarberDashboardScreen> {
   }
 
   String _getPerformanceStreak() {
-    // Mock logic: check consecutive completed days
-    return "5 day completion streak! ⚡️";
+    final user = ref.read(userProvider);
+    if (user.role != AppRole.barber) {
+      return "Keep up the great work!";
+    }
+
+    // Get staff ID
+    final staffId = _staffProfile?['id'] as String?;
+    if (staffId == null) {
+      return "Start your streak today!";
+    }
+
+    // Get all completed appointments for this staff member
+    final completedAppointments = _appointments.where((appt) => 
+      appt.staffId == staffId && 
+      appt.status == AppointmentStatus.completed
+    ).toList();
+
+    if (completedAppointments.isEmpty) {
+      return "Start your streak today!";
+    }
+
+    // Get unique dates with completed appointments, sorted descending
+    final completedDates = completedAppointments
+        .map((appt) => appt.date)
+        .toSet()
+        .toList()
+      ..sort((a, b) => b.compareTo(a)); // Sort descending (newest first)
+
+    if (completedDates.isEmpty) {
+      return "Start your streak today!";
+    }
+
+    // Calculate consecutive days streak starting from today
+    final today = DateFormat('yyyy-MM-dd').format(DateTime.now());
+    int streak = 0;
+    
+    // Check if today has completed appointments
+    if (completedDates.contains(today)) {
+      streak = 1;
+      
+      // Count backwards for consecutive days
+      DateTime currentDate = DateTime.now();
+      for (int i = 1; i <= 365; i++) { // Max 365 days
+        currentDate = currentDate.subtract(const Duration(days: 1));
+        final dateStr = DateFormat('yyyy-MM-dd').format(currentDate);
+        
+        if (completedDates.contains(dateStr)) {
+          streak++;
+        } else {
+          break; // Streak broken
+        }
+      }
+    } else {
+      // Check if yesterday has completed appointments (streak might be ongoing)
+      final yesterday = DateFormat('yyyy-MM-dd').format(
+        DateTime.now().subtract(const Duration(days: 1))
+      );
+      
+      if (completedDates.contains(yesterday)) {
+        streak = 1;
+        
+        // Count backwards from yesterday
+        DateTime currentDate = DateTime.now().subtract(const Duration(days: 1));
+        for (int i = 1; i <= 365; i++) {
+          currentDate = currentDate.subtract(const Duration(days: 1));
+          final dateStr = DateFormat('yyyy-MM-dd').format(currentDate);
+          
+          if (completedDates.contains(dateStr)) {
+            streak++;
+          } else {
+            break;
+          }
+        }
+      }
+    }
+
+    // Return appropriate message based on streak
+    if (streak == 0) {
+      return "Start your streak today!";
+    } else if (streak == 1) {
+      return "1 day streak! Keep it going! ⚡️";
+    } else if (streak < 7) {
+      return "$streak day streak! 🔥";
+    } else if (streak < 30) {
+      return "$streak day streak! Amazing! 🔥🔥";
+    } else {
+      return "$streak day streak! You're unstoppable! 🔥🔥🔥";
+    }
   }
 
   @override
@@ -386,21 +474,48 @@ class _BarberDashboardScreenState extends ConsumerState<BarberDashboardScreen> {
         Expanded(
           child: SingleChildScrollView(
             physics: isStaff ? const ClampingScrollPhysics() : const AlwaysScrollableScrollPhysics(),
-            padding: const EdgeInsets.symmetric(horizontal: 16),
+            padding: const EdgeInsets.fromLTRB(16, 8, 16, 24),
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
                 if (isStaff) ...[
-                  _buildTodayFocusCard(isDark, nextAppt, pendingRequests, allDone),
-                  const SizedBox(height: 24),
-                  if (!allDone && nextAppt == null && pendingRequests == 0) 
-                    _buildIdleTimeSuggestions(isDark),
+                  Builder(
+                    builder: (context) {
+                      // Calculate today's stats
+                      final todayStr = DateFormat('yyyy-MM-dd').format(DateTime.now());
+                      final todayAppointments = _appointments.where((a) => a.date == todayStr).toList();
+                      final todayCompleted = todayAppointments.where((a) => a.status == AppointmentStatus.completed).toList();
+                      final todayAppointmentCount = todayAppointments.length;
+                      final todayEarnings = todayCompleted.fold(0.0, (sum, a) => sum + a.totalAmount);
+                      
+                      return _buildTodayFocusCard(
+                        isDark,
+                        nextAppt,
+                        pendingRequests,
+                        allDone,
+                        todayAppointmentCount: todayAppointmentCount,
+                        todayEarnings: todayEarnings,
+                        onTap: () {
+                          setState(() {
+                            _currentIndex = 1; // Navigate to Appointments tab
+                            // Set appropriate task tab based on state
+                            if (pendingRequests > 0) {
+                              _activeTaskTab = 'Requests';
+                            } else if (nextAppt != null) {
+                              _activeTaskTab = 'Upcoming';
+                            } else {
+                              _activeTaskTab = 'Requests'; // Default
+                            }
+                          });
+                        },
+                      );
+                    },
+                  ),
+                  const SizedBox(height: 6),
                 ],
-                _buildPeriodFilter(isDark),
-                const SizedBox(height: 20),
                 _buildStatsGrid(isDark),
                 if (isStaff) ...[
-                   const SizedBox(height: 20),
+                   const SizedBox(height: 6),
                    _buildPerformanceStreakCard(isDark),
                 ],
                 if (!isStaff) const SizedBox(height: 100),
@@ -410,59 +525,6 @@ class _BarberDashboardScreenState extends ConsumerState<BarberDashboardScreen> {
           ),
         ),
       ],
-    );
-  }
-
-  Widget _buildIdleTimeSuggestions(bool isDark) {
-    return Container(
-      padding: const EdgeInsets.all(20),
-      decoration: BoxDecoration(
-        color: AppTheme.emerald.withOpacity(0.05),
-        borderRadius: BorderRadius.circular(24),
-        border: Border.all(color: AppTheme.emerald.withOpacity(0.1)),
-      ),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Row(
-            children: [
-              const Icon(LucideIcons.zap, color: AppTheme.emerald, size: 18),
-              const SizedBox(width: 8),
-              const Text("Converting Downtime", style: TextStyle(fontWeight: FontWeight.bold, fontSize: 14)),
-              const Spacer(),
-              Text("Free for now", style: TextStyle(fontSize: 10, color: (isDark ? Colors.white : Colors.black).withOpacity(0.4))),
-            ],
-          ),
-          const SizedBox(height: 16),
-          Row(
-            children: [
-              _suggestionChip(LucideIcons.camera, "Add Portfolio", () => context.push('/staff-profile-edit', extra: _staffProfile ?? {})),
-              const SizedBox(width: 8),
-              _suggestionChip(LucideIcons.userPlus, "Accept Walk-in", () {}),
-            ],
-          ),
-        ],
-      ),
-    );
-  }
-
-  Widget _suggestionChip(IconData icon, String label, VoidCallback onTap) {
-    return Expanded(
-      child: InkWell(
-        onTap: onTap,
-        child: Container(
-          padding: const EdgeInsets.symmetric(vertical: 10, horizontal: 12),
-          decoration: BoxDecoration(color: Colors.white10, borderRadius: BorderRadius.circular(12)),
-          child: Row(
-            mainAxisAlignment: MainAxisAlignment.center,
-            children: [
-              Icon(icon, size: 14),
-              const SizedBox(width: 6),
-              Text(label, style: const TextStyle(fontSize: 11, fontWeight: FontWeight.bold)),
-            ],
-          ),
-        ),
-      ),
     );
   }
 
@@ -492,36 +554,81 @@ class _BarberDashboardScreenState extends ConsumerState<BarberDashboardScreen> {
   }
 
   Widget _buildHeaderNotificationItem(bool isDark, int unreadCount) {
-    return Stack(
-      children: [
-        Container(
-          padding: const EdgeInsets.all(12),
-          decoration: BoxDecoration(
-            color: isDark ? AppTheme.darkCardBG : AppTheme.lightCardBG,
-            borderRadius: BorderRadius.circular(16),
+    return InkWell(
+      onTap: () => _showNotificationsPopup(isDark),
+      borderRadius: BorderRadius.circular(16),
+      child: Stack(
+        children: [
+          Container(
+            padding: const EdgeInsets.all(12),
+            decoration: BoxDecoration(
+              color: isDark ? AppTheme.darkCardBG : AppTheme.lightCardBG,
+              borderRadius: BorderRadius.circular(16),
+            ),
+            child: const Icon(LucideIcons.bell, size: 20),
           ),
-          child: const Icon(LucideIcons.bell, size: 20),
-        ),
-        if (unreadCount > 0)
-          Positioned(
-            right: 0,
-            top: 0,
-            child: Container(
-              padding: const EdgeInsets.all(4),
-              decoration: const BoxDecoration(color: Colors.red, shape: BoxShape.circle),
-              constraints: const BoxConstraints(minWidth: 16, minHeight: 16),
-              child: Text(
-                unreadCount > 9 ? '9+' : unreadCount.toString(),
-                style: const TextStyle(color: Colors.white, fontSize: 8, fontWeight: FontWeight.bold),
-                textAlign: TextAlign.center,
+          if (unreadCount > 0)
+            Positioned(
+              right: 0,
+              top: 0,
+              child: Container(
+                padding: const EdgeInsets.all(4),
+                decoration: const BoxDecoration(color: Colors.red, shape: BoxShape.circle),
+                constraints: const BoxConstraints(minWidth: 16, minHeight: 16),
+                child: Text(
+                  unreadCount > 9 ? '9+' : unreadCount.toString(),
+                  style: const TextStyle(color: Colors.white, fontSize: 8, fontWeight: FontWeight.bold),
+                  textAlign: TextAlign.center,
+                ),
               ),
             ),
-          ),
-      ],
+        ],
+      ),
     );
   }
 
-  Widget _buildTodayFocusCard(bool isDark, Appointment? next, int pending, bool allDone) {
+  void _showNotificationsPopup(bool isDark) {
+    showModalBottomSheet(
+      context: context,
+      isScrollControlled: true,
+      isDismissible: true,
+      enableDrag: true,
+      backgroundColor: Colors.transparent,
+      barrierColor: Colors.black.withOpacity(0.5),
+      builder: (context) => DraggableScrollableSheet(
+        initialChildSize: 0.75,
+        minChildSize: 0.5,
+        maxChildSize: 0.95,
+        builder: (context, scrollController) => Container(
+          decoration: BoxDecoration(
+            color: isDark ? AppTheme.darkBGMiddle : Colors.white,
+            borderRadius: const BorderRadius.vertical(top: Radius.circular(32)),
+          ),
+          child: ClipRRect(
+            borderRadius: const BorderRadius.vertical(top: Radius.circular(32)),
+            child: _NotificationsPopupContent(
+              scrollController: scrollController,
+              isDark: isDark,
+              onNotificationRead: () {
+                // Refresh unread count when a notification is marked as read
+                ref.read(unreadNotificationCountProvider.notifier).state--;
+              },
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+
+  Widget _buildTodayFocusCard(
+    bool isDark, 
+    Appointment? next, 
+    int pending, 
+    bool allDone, {
+    int todayAppointmentCount = 0,
+    double todayEarnings = 0.0,
+    VoidCallback? onTap,
+  }) {
     String focusTitle = "Ready for work?";
     String focusSubtitle = "Check your schedule to start";
     IconData focusIcon = LucideIcons.calendar;
@@ -538,51 +645,160 @@ class _BarberDashboardScreenState extends ConsumerState<BarberDashboardScreen> {
       focusIcon = LucideIcons.clock;
       focusColor = AppTheme.emerald;
     } else if (allDone) {
-      focusTitle = "All Tasks Completed!";
+      focusTitle = "All Appointments Completed!";
       focusSubtitle = "Great job today, take a rest";
       focusIcon = LucideIcons.partyPopper;
       focusColor = AppTheme.emerald;
     }
 
-    return Container(
-      padding: const EdgeInsets.all(20),
-      decoration: BoxDecoration(
-        color: focusColor.withOpacity(0.1),
-        borderRadius: BorderRadius.circular(24),
-        border: Border.all(color: focusColor.withOpacity(0.2)),
-      ),
-      child: Row(
-        children: [
-          Container(
-            padding: const EdgeInsets.all(12),
-            decoration: BoxDecoration(color: focusColor.withOpacity(0.2), shape: BoxShape.circle),
-            child: Icon(focusIcon, color: focusColor, size: 24),
-          ),
-          const SizedBox(width: 16),
-          Expanded(
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
+    // Calculate time until next appointment
+    String? nextApptTime;
+    if (next != null) {
+      try {
+        final now = DateTime.now();
+        final timeParts = next.timeSlot.split(':');
+        if (timeParts.length >= 2) {
+          final hour = int.tryParse(timeParts[0]);
+          final minute = int.tryParse(timeParts[1].split(' ')[0]);
+          if (hour != null && minute != null) {
+            final apptTime = DateTime(now.year, now.month, now.day, hour, minute);
+            if (apptTime.isAfter(now)) {
+              final difference = apptTime.difference(now);
+              if (difference.inHours > 0) {
+                nextApptTime = "${difference.inHours}h ${difference.inMinutes % 60}m";
+              } else {
+                nextApptTime = "${difference.inMinutes}m";
+              }
+            }
+          }
+        }
+      } catch (e) {
+        // If parsing fails, just show the time slot
+        nextApptTime = next.timeSlot;
+      }
+    }
+
+    return InkWell(
+      onTap: onTap,
+      borderRadius: BorderRadius.circular(24),
+      child: Container(
+        padding: const EdgeInsets.all(20),
+        decoration: BoxDecoration(
+          color: focusColor.withOpacity(0.1),
+          borderRadius: BorderRadius.circular(24),
+          border: Border.all(color: focusColor.withOpacity(0.2)),
+        ),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            // Main info row
+            Row(
               children: [
-                Text(focusTitle, style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold, color: isDark ? Colors.white : Colors.black)),
-                Text(focusSubtitle, style: TextStyle(fontSize: 12, color: (isDark ? Colors.white : Colors.black).withOpacity(0.6))),
+                Container(
+                  padding: const EdgeInsets.all(12),
+                  decoration: BoxDecoration(color: focusColor.withOpacity(0.2), shape: BoxShape.circle),
+                  child: Icon(focusIcon, color: focusColor, size: 24),
+                ),
+                const SizedBox(width: 16),
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(
+                        focusTitle, 
+                        style: TextStyle(
+                          fontSize: 16, 
+                          fontWeight: FontWeight.bold, 
+                          color: isDark ? Colors.white : Colors.black
+                        ),
+                      ),
+                      const SizedBox(height: 4),
+                      Text(
+                        focusSubtitle, 
+                        style: TextStyle(
+                          fontSize: 12, 
+                          color: (isDark ? Colors.white : Colors.black).withOpacity(0.6)
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+                Icon(LucideIcons.chevronRight, size: 20, color: (isDark ? Colors.white : Colors.black).withOpacity(0.3)),
               ],
             ),
-          ),
-          Icon(LucideIcons.chevronRight, size: 20, color: (isDark ? Colors.white : Colors.black).withOpacity(0.3)),
-        ],
+            // Stats row
+            const SizedBox(height: 18),
+            Container(
+              padding: const EdgeInsets.symmetric(vertical: 14, horizontal: 16),
+              decoration: BoxDecoration(
+                color: (isDark ? Colors.white : Colors.black).withOpacity(0.05),
+                borderRadius: BorderRadius.circular(12),
+              ),
+              child: Row(
+                mainAxisAlignment: MainAxisAlignment.spaceAround,
+                children: [
+                  // Today's appointments count
+                  _buildStatItem(
+                    isDark,
+                    LucideIcons.calendar,
+                    todayAppointmentCount.toString(),
+                    "Today",
+                    Colors.blue,
+                  ),
+                  // Today's earnings
+                  _buildStatItem(
+                    isDark,
+                    LucideIcons.dollarSign,
+                    "\$${todayEarnings.toStringAsFixed(0)}",
+                    "Earnings",
+                    AppTheme.emerald,
+                  ),
+                  // Next appointment time
+                  _buildStatItem(
+                    isDark,
+                    LucideIcons.clock,
+                    nextApptTime ?? "N/A",
+                    "Next",
+                    Colors.orange,
+                  ),
+                ],
+              ),
+            ),
+          ],
+        ),
       ),
     );
   }
 
-  Widget _buildPeriodFilter(bool isDark) {
-    return _buildTabSwitcher(
-      isDark: isDark,
-      items: ['Daily', 'Weekly', 'Monthly', 'Yearly'],
-      activeItem: _filterPeriod,
-      onTap: (val) {
-        setState(() => _filterPeriod = val);
-        _loadData();
-      },
+  Widget _buildStatItem(bool isDark, IconData icon, String value, String label, Color color) {
+    return Expanded(
+      child: Column(
+        children: [
+          Row(
+            mainAxisAlignment: MainAxisAlignment.center,
+            children: [
+              Icon(icon, size: 14, color: color),
+              const SizedBox(width: 4),
+              Text(
+                value,
+                style: TextStyle(
+                  fontSize: 14,
+                  fontWeight: FontWeight.bold,
+                  color: isDark ? Colors.white : Colors.black,
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 4),
+          Text(
+            label,
+            style: TextStyle(
+              fontSize: 10,
+              color: (isDark ? Colors.white : Colors.black).withOpacity(0.5),
+            ),
+          ),
+        ],
+      ),
     );
   }
 
@@ -645,36 +861,37 @@ class _BarberDashboardScreenState extends ConsumerState<BarberDashboardScreen> {
 
       return Column(
         children: [
-          _buildSpecialEarningsCard(isDark, completedEarnings),
-          const SizedBox(height: 16),
           if (ranked.isNotEmpty)
             Container(
-              margin: const EdgeInsets.only(bottom: 16),
+              margin: EdgeInsets.zero,
               padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
               decoration: BoxDecoration(color: (isDark ? Colors.white : Colors.black).withOpacity(0.05), borderRadius: BorderRadius.circular(16)),
               child: Row(
                 children: [
                   const Icon(LucideIcons.award, color: Colors.amber, size: 16),
                   const SizedBox(width: 12),
-                  const Text("Top Performer:", style: TextStyle(fontSize: 12, fontWeight: FontWeight.bold)),
+                  const Text("Top Service:", style: TextStyle(fontSize: 12, fontWeight: FontWeight.bold)),
                   const SizedBox(width: 8),
                   Text(topService, style: const TextStyle(fontSize: 12, fontWeight: FontWeight.w900, color: AppTheme.emerald)),
                 ],
               ),
             ),
-          GridView.count(
-            shrinkWrap: true,
-            physics: const NeverScrollableScrollPhysics(),
-            crossAxisCount: 2,
-            mainAxisSpacing: 12,
-            crossAxisSpacing: 12,
-            childAspectRatio: 1.4,
-            children: [
-              _buildCompactStatCard(isDark, "Requests", pendingCount.toString(), LucideIcons.bell, Colors.blue, helper: "Waiting for action"),
-              _buildCompactStatCard(isDark, "Upcoming", acceptedCount.toString(), LucideIcons.scissors, Colors.orange, helper: "Your next tasks"),
-              _buildCompactStatCard(isDark, "Completed", completedCount.toString(), LucideIcons.checkCircle, AppTheme.emerald, helper: "Great progress!"),
-              _buildCompactStatCard(isDark, "Missed", missedCount.toString(), LucideIcons.userX, Colors.red, helper: "Affects rating"),
-            ],
+          Transform.translate(
+            offset: const Offset(0, -8),
+            child: GridView.count(
+              shrinkWrap: true,
+              physics: const NeverScrollableScrollPhysics(),
+              crossAxisCount: 2,
+              mainAxisSpacing: 16,
+              crossAxisSpacing: 16,
+              childAspectRatio: 1.4,
+              children: [
+                _buildCompactStatCard(isDark, "Requests", pendingCount.toString(), LucideIcons.bell, Colors.blue, helper: "Waiting for action"),
+                _buildCompactStatCard(isDark, "Upcoming", acceptedCount.toString(), LucideIcons.scissors, Colors.orange, helper: "Your next appointments"),
+                _buildCompactStatCard(isDark, "Completed", completedCount.toString(), LucideIcons.checkCircle, AppTheme.emerald, helper: "Great progress!"),
+                _buildCompactStatCard(isDark, "Missed", missedCount.toString(), LucideIcons.userX, Colors.red, helper: "Affects rating"),
+              ],
+            ),
           ),
         ],
       );
@@ -700,80 +917,6 @@ class _BarberDashboardScreenState extends ConsumerState<BarberDashboardScreen> {
         const SizedBox(height: 16),
         _buildStatCard(isDark, "Total Earnings", "\$$earningsLabel", LucideIcons.dollarSign, Colors.amber),
       ],
-    );
-  }
-
-  Widget _buildSpecialEarningsCard(bool isDark, double totalAmount) {
-    final split = _getCommissionSplit(totalAmount);
-    
-    return Container(
-      width: double.infinity,
-      padding: const EdgeInsets.all(24),
-      decoration: BoxDecoration(
-        color: isDark ? AppTheme.darkCardBG : AppTheme.lightCardBG,
-        borderRadius: BorderRadius.circular(28),
-        boxShadow: [BoxShadow(color: Colors.black.withOpacity(0.1), blurRadius: 20, offset: const Offset(0, 10))],
-      ),
-      child: Column(
-        children: [
-          Row(
-            mainAxisAlignment: MainAxisAlignment.spaceBetween,
-            children: [
-              const Text("Today's Breakdown", style: TextStyle(fontSize: 12, fontWeight: FontWeight.bold, color: Colors.grey)),
-              Container(
-                padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
-                decoration: BoxDecoration(color: AppTheme.emerald.withOpacity(0.1), borderRadius: BorderRadius.circular(20)),
-                child: Row(
-                  children: [
-                    const Icon(LucideIcons.info, color: AppTheme.emerald, size: 12),
-                    const SizedBox(width: 4),
-                    Text("Commission: ${split['staffPercent']?.toStringAsFixed(0)}%", style: const TextStyle(color: AppTheme.emerald, fontSize: 10, fontWeight: FontWeight.bold)),
-                  ],
-                ),
-              ),
-            ],
-          ),
-          const SizedBox(height: 20),
-          Row(
-            children: [
-              Expanded(
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    const Text("MY CUT", style: TextStyle(fontSize: 10, fontWeight: FontWeight.w900, color: AppTheme.emerald)),
-                    Text("\$${split['staff']?.toStringAsFixed(0)}", style: const TextStyle(fontSize: 32, fontWeight: FontWeight.w900)),
-                  ],
-                ),
-              ),
-              Container(width: 1, height: 40, color: (isDark ? Colors.white : Colors.black).withOpacity(0.1)),
-              const SizedBox(width: 24),
-              Expanded(
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    const Text("TOTAL VALUE", style: TextStyle(fontSize: 10, fontWeight: FontWeight.bold, color: Colors.grey)),
-                    Text("\$${totalAmount.toStringAsFixed(0)}", style: TextStyle(fontSize: 24, fontWeight: FontWeight.w900, color: (isDark ? Colors.white : Colors.black).withOpacity(0.5))),
-                  ],
-                ),
-              ),
-            ],
-          ),
-          const SizedBox(height: 20),
-          Container(
-            padding: const EdgeInsets.all(12),
-            decoration: BoxDecoration(color: (isDark ? Colors.white : Colors.black).withOpacity(0.04), borderRadius: BorderRadius.circular(16)),
-            child: Row(
-              children: [
-                const Icon(LucideIcons.home, size: 14, color: Colors.grey),
-                const SizedBox(width: 12),
-                Text("Owner Cut (${(100 - (split['staffPercent'] ?? 70)).toStringAsFixed(0)}%)", style: const TextStyle(fontSize: 11, fontWeight: FontWeight.bold, color: Colors.grey)),
-                const Spacer(),
-                Text("\$${split['owner']?.toStringAsFixed(0)}", style: const TextStyle(fontSize: 11, fontWeight: FontWeight.w900, color: Colors.grey)),
-              ],
-            ),
-          ),
-        ],
-      ).animate().fadeIn().slideY(begin: 0.2),
     );
   }
 
@@ -1379,7 +1522,7 @@ class _BarberDashboardScreenState extends ConsumerState<BarberDashboardScreen> {
       children: [
         _buildScreenHeader(
           isDark, 
-          title: "Tasks & Schedule",
+          title: "Appointments",
           subtitle: "Manage your day",
           trailing: _activeTaskTab == 'Requests' ? Row(
             mainAxisSize: MainAxisSize.min,
@@ -1444,7 +1587,7 @@ class _BarberDashboardScreenState extends ConsumerState<BarberDashboardScreen> {
                         color: (isDark ? Colors.white : Colors.black).withOpacity(0.1)
                       ),
                       const SizedBox(height: 16),
-                      Text("No $_activeTaskTab tasks", style: TextStyle(color: (isDark ? Colors.white : Colors.black).withOpacity(0.4))),
+                      Text("No $_activeTaskTab appointments", style: TextStyle(color: (isDark ? Colors.white : Colors.black).withOpacity(0.4))),
                     ],
                   )
                 )
@@ -1461,7 +1604,7 @@ class _BarberDashboardScreenState extends ConsumerState<BarberDashboardScreen> {
                       );
                     }
                     
-                    // Add swipe gestures for Tasks and Upcoming
+                    // Add swipe gestures for Appointments and Upcoming
                     if (_activeTaskTab == 'Upcoming') {
                       return _buildSwipeableTaskCard(isDark, appt, index);
                     }
@@ -2370,14 +2513,6 @@ class _BarberDashboardScreenState extends ConsumerState<BarberDashboardScreen> {
                   ),
                 ],
                 
-                _buildProfileItem(
-                  isDark, 
-                  LucideIcons.bell, 
-                  "Notifications", 
-                  Colors.amber,
-                  onTap: () => context.push('/notifications')
-                ),
-
                 const SizedBox(height: 40),
                 InkWell(
                   onTap: () => context.go('/login'),
@@ -2795,7 +2930,7 @@ class _BarberDashboardScreenState extends ConsumerState<BarberDashboardScreen> {
             mainAxisAlignment: MainAxisAlignment.spaceEvenly,
             children: [
               _buildNavItem(isDark, 0, LucideIcons.layoutDashboard, "DASHBOARD"),
-              _buildNavItem(isDark, 1, LucideIcons.checkSquare, "TASKS"),
+              _buildNavItem(isDark, 1, LucideIcons.checkSquare, "APPOINTMENTS"),
               _buildNavItem(isDark, 2, LucideIcons.wallet, "EARNINGS"),
               _buildNavItem(isDark, 3, LucideIcons.store, "PROFILE"),
             ],
@@ -2935,6 +3070,261 @@ class _BarberDashboardScreenState extends ConsumerState<BarberDashboardScreen> {
                onPressed: () => Navigator.pop(context),
                child: const Text("Close", style: TextStyle(color: Colors.white, fontWeight: FontWeight.bold)),
              )
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+class _NotificationsPopupContent extends ConsumerStatefulWidget {
+  final ScrollController scrollController;
+  final bool isDark;
+  final VoidCallback onNotificationRead;
+
+  const _NotificationsPopupContent({
+    required this.scrollController,
+    required this.isDark,
+    required this.onNotificationRead,
+  });
+
+  @override
+  ConsumerState<_NotificationsPopupContent> createState() => _NotificationsPopupContentState();
+}
+
+class _NotificationsPopupContentState extends ConsumerState<_NotificationsPopupContent> {
+  List<dynamic> _notifications = [];
+  bool _isLoading = true;
+
+  @override
+  void initState() {
+    super.initState();
+    _loadNotifications();
+  }
+
+  Future<void> _loadNotifications() async {
+    setState(() => _isLoading = true);
+    final user = ref.read(userProvider);
+    final apiService = ref.read(apiServiceProvider);
+    try {
+      final notifs = await apiService.getNotifications(user.id);
+      if (mounted) {
+        setState(() {
+          _notifications = notifs;
+          _isLoading = false;
+        });
+      }
+    } catch (e) {
+      if (mounted) {
+        setState(() => _isLoading = false);
+      }
+    }
+  }
+
+  bool _isNotificationRead(Map<String, dynamic> notif) {
+    final isReadValue = notif['isRead'];
+    return isReadValue == true || isReadValue == 'true' || isReadValue == 1;
+  }
+
+  Future<void> _markRead(String id) async {
+    final apiService = ref.read(apiServiceProvider);
+    try {
+      await apiService.markNotificationAsRead(id);
+      // Optimistic update
+      if (mounted) {
+        setState(() {
+          final index = _notifications.indexWhere((n) => n['id'] == id);
+          if (index != -1 && !_isNotificationRead(_notifications[index])) {
+            _notifications[index]['isRead'] = true;
+            // Recalculate unread count
+            final unreadCount = _notifications.where((n) => !_isNotificationRead(n)).length;
+            ref.read(unreadNotificationCountProvider.notifier).state = unreadCount;
+            widget.onNotificationRead();
+          }
+        });
+      }
+    } catch (e) {
+      // Error handling - could show snackbar
+    }
+  }
+
+  Future<void> _markAllRead() async {
+    final unreadNotifications = _notifications.where((n) => !_isNotificationRead(n)).toList();
+    if (unreadNotifications.isEmpty) return;
+
+    final apiService = ref.read(apiServiceProvider);
+    
+    // Optimistic update - mark all as read immediately
+    if (mounted) {
+      setState(() {
+        for (var notif in _notifications) {
+          if (!_isNotificationRead(notif)) {
+            notif['isRead'] = true;
+          }
+        }
+        ref.read(unreadNotificationCountProvider.notifier).state = 0;
+      });
+    }
+
+    // Mark all as read in the background
+    try {
+      for (var notif in unreadNotifications) {
+        await apiService.markNotificationAsRead(notif['id']);
+      }
+    } catch (e) {
+      // If error occurs, reload notifications to sync state
+      if (mounted) {
+        _loadNotifications();
+      }
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return Column(
+      children: [
+        // Header
+        Padding(
+          padding: const EdgeInsets.all(24),
+          child: Row(
+            mainAxisAlignment: MainAxisAlignment.spaceBetween,
+            children: [
+              const Text(
+                "Notifications",
+                style: TextStyle(fontSize: 24, fontWeight: FontWeight.w900),
+              ),
+              Row(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  // Read All button - show if there are unread notifications
+                  if (!_isLoading && _notifications.isNotEmpty)
+                    Builder(
+                      builder: (context) {
+                        final hasUnread = _notifications.any((n) => !_isNotificationRead(n));
+                        if (hasUnread) {
+                          return Padding(
+                            padding: const EdgeInsets.only(right: 8),
+                            child: TextButton(
+                              onPressed: _markAllRead,
+                              style: TextButton.styleFrom(
+                                padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+                              ),
+                              child: const Text(
+                                "Read All",
+                                style: TextStyle(
+                                  fontSize: 14,
+                                  fontWeight: FontWeight.bold,
+                                  color: AppTheme.emerald,
+                                ),
+                              ),
+                            ),
+                          );
+                        }
+                        return const SizedBox.shrink();
+                      },
+                    ),
+                  IconButton(
+                    icon: const Icon(LucideIcons.x),
+                    onPressed: () => Navigator.pop(context),
+                    padding: EdgeInsets.zero,
+                    constraints: const BoxConstraints(),
+                  ),
+                ],
+              ),
+            ],
+          ),
+        ),
+        // Content
+        Expanded(
+          child: _isLoading
+              ? const Center(child: CircularProgressIndicator())
+              : _notifications.isEmpty
+                  ? Center(
+                      child: Text(
+                        "No notifications",
+                        style: TextStyle(
+                          color: (widget.isDark ? Colors.white : Colors.black).withOpacity(0.4),
+                        ),
+                      ),
+                    )
+                  : RefreshIndicator(
+                      onRefresh: _loadNotifications,
+                      child: ListView.builder(
+                        controller: widget.scrollController,
+                        padding: const EdgeInsets.symmetric(horizontal: 24),
+                        itemCount: _notifications.length,
+                        itemBuilder: (context, index) => _buildNotificationCard(_notifications[index]),
+                      ),
+                    ),
+        ),
+      ],
+    );
+  }
+
+  Widget _buildNotificationCard(Map<String, dynamic> notif) {
+    final isRead = _isNotificationRead(notif);
+
+    return InkWell(
+      onTap: () => !isRead ? _markRead(notif['id']) : null,
+      child: Container(
+        margin: const EdgeInsets.only(bottom: 16),
+        padding: const EdgeInsets.all(20),
+        decoration: BoxDecoration(
+          color: widget.isDark ? AppTheme.darkCardBG : AppTheme.lightCardBG,
+          borderRadius: BorderRadius.circular(24),
+          border: !isRead ? Border.all(color: AppTheme.emerald, width: 1) : null,
+        ),
+        child: Row(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Container(
+              padding: const EdgeInsets.all(10),
+              decoration: BoxDecoration(
+                color: (isRead
+                        ? (widget.isDark ? Colors.white : Colors.black)
+                        : AppTheme.emerald)
+                    .withOpacity(0.1),
+                shape: BoxShape.circle,
+              ),
+              child: Icon(
+                LucideIcons.bell,
+                size: 20,
+                color: isRead
+                    ? (widget.isDark ? Colors.white : Colors.black).withOpacity(0.4)
+                    : AppTheme.emerald,
+              ),
+            ),
+            const SizedBox(width: 16),
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(
+                    notif['title'],
+                    style: TextStyle(
+                      fontWeight: FontWeight.bold,
+                      fontSize: 16,
+                      color: isRead ? null : AppTheme.emerald,
+                    ),
+                  ),
+                  const SizedBox(height: 4),
+                  Text(
+                    notif['body'],
+                    style: TextStyle(
+                      color: (widget.isDark ? Colors.white : Colors.black).withOpacity(0.6),
+                    ),
+                  ),
+                  const SizedBox(height: 8),
+                  Text(
+                    notif['createdAt'].toString().substring(0, 10),
+                    style: TextStyle(
+                      fontSize: 10,
+                      color: (widget.isDark ? Colors.white : Colors.black).withOpacity(0.3),
+                    ),
+                  ),
+                ],
+              ),
+            ),
           ],
         ),
       ),

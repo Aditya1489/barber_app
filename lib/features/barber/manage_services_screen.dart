@@ -182,13 +182,15 @@ class _ManageServicesScreenState extends ConsumerState<ManageServicesScreen> {
     if (confirm == true) {
       setState(() => _isLoading = true);
       final apiService = ref.read(apiServiceProvider);
-      try {
-        await apiService.deleteService(widget.shopData['id'], serviceId);
-        _loadServices();
-      } catch (e) {
-        if (mounted) {
-           ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('Error: $e')));
-           setState(() => _isLoading = false);
+      final success = await apiService.deleteService(widget.shopData['id'], serviceId);
+      if (mounted) {
+        if (success) {
+          _loadServices();
+        } else {
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(content: Text('Failed to delete service. Please try again.'))
+          );
+          setState(() => _isLoading = false);
         }
       }
     }

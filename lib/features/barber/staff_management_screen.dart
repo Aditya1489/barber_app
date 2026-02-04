@@ -157,13 +157,15 @@ class _StaffManagementScreenState extends ConsumerState<StaffManagementScreen> {
     if (confirm == true) {
       setState(() => _isLoading = true);
       final apiService = ref.read(apiServiceProvider);
-      try {
-        await apiService.removeStaffFromShop(widget.shopData['id'], staffId);
-        _loadStaff();
-      } catch (e) {
-        if (mounted) {
-           ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('Error: $e')));
-           setState(() => _isLoading = false);
+      final success = await apiService.removeStaffFromShop(widget.shopData['id'], staffId);
+      if (mounted) {
+        if (success) {
+          _loadStaff();
+        } else {
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(content: Text('Failed to remove staff. Please try again.'))
+          );
+          setState(() => _isLoading = false);
         }
       }
     }

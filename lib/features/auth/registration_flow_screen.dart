@@ -72,7 +72,7 @@ class _RegistrationFlowScreenState extends ConsumerState<RegistrationFlowScreen>
             const SnackBar(content: Text('Location services are disabled.')),
           );
         }
-        setState(() => _isLoading = false);
+        if (mounted) setState(() => _isLoading = false);
         return;
       }
 
@@ -84,8 +84,8 @@ class _RegistrationFlowScreenState extends ConsumerState<RegistrationFlowScreen>
             ScaffoldMessenger.of(context).showSnackBar(
               const SnackBar(content: Text('Location permissions are denied.')),
             );
+            setState(() => _isLoading = false);
           }
-          setState(() => _isLoading = false);
           return;
         }
       }
@@ -95,8 +95,8 @@ class _RegistrationFlowScreenState extends ConsumerState<RegistrationFlowScreen>
           ScaffoldMessenger.of(context).showSnackBar(
             const SnackBar(content: Text('Location permissions are permanently denied.')),
           );
+          setState(() => _isLoading = false);
         }
-        setState(() => _isLoading = false);
         return;
       }
 
