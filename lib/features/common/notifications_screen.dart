@@ -28,6 +28,10 @@ class _NotificationsScreenState extends ConsumerState<NotificationsScreen> {
   Future<void> _loadNotifications() async {
     setState(() => _isLoading = true);
     final user = ref.read(userProvider);
+    if (user == null) {
+      if (mounted) setState(() => _isLoading = false);
+      return;
+    }
     final apiService = ref.read(apiServiceProvider);
     try {
       final notifs = await apiService.getNotifications(user.id);

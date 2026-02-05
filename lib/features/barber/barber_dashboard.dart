@@ -46,7 +46,9 @@ class _BarberDashboardScreenState extends ConsumerState<BarberDashboardScreen> {
     WidgetsBinding.instance.addPostFrameCallback((_) {
       _loadData();
       final user = ref.read(userProvider);
-      ref.read(notificationServiceProvider).startPolling(user.id);
+      if (user != null) {
+        ref.read(notificationServiceProvider).startPolling(user.id);
+      }
     });
   }
   
@@ -59,6 +61,10 @@ class _BarberDashboardScreenState extends ConsumerState<BarberDashboardScreen> {
   Future<void> _loadData() async {
     setState(() => _isLoading = true);
     final user = ref.read(userProvider);
+    if (user == null) {
+      if (mounted) setState(() => _isLoading = false);
+      return;
+    }
     final apiService = ref.read(apiServiceProvider);
 
     try {
@@ -97,7 +103,10 @@ class _BarberDashboardScreenState extends ConsumerState<BarberDashboardScreen> {
           final photo = _staffProfile!['photo'] ?? _staffProfile!['imageUrl'];
             if (photo != null && photo != user.profilePhoto) {
                Future.microtask(() async {
-                  await ref.read(userProvider.notifier).setUser(user.copyWith(profilePhoto: photo));
+                  final currentUser = ref.read(userProvider);
+                  if (currentUser != null) {
+                    await ref.read(userProvider.notifier).setUser(currentUser.copyWith(profilePhoto: photo));
+                  }
                });
             }
         }
@@ -268,7 +277,7 @@ class _BarberDashboardScreenState extends ConsumerState<BarberDashboardScreen> {
 
   String _getPerformanceStreak() {
     final user = ref.read(userProvider);
-    if (user.role != AppRole.barber) {
+    if (user == null || user.role != AppRole.barber) {
       return "Keep up the great work!";
     }
 
@@ -442,6 +451,7 @@ class _BarberDashboardScreenState extends ConsumerState<BarberDashboardScreen> {
 
   Widget _buildDashboardTab(bool isDark, int unreadCount) {
     final user = ref.watch(userProvider);
+    if (user == null) return const Center(child: CircularProgressIndicator());
     final isStaff = user.role == AppRole.barber;
     
     // Find Next Appointment for "Today Focus"
@@ -843,6 +853,7 @@ class _BarberDashboardScreenState extends ConsumerState<BarberDashboardScreen> {
 
   Widget _buildStatsGrid(bool isDark) {
     final user = ref.watch(userProvider);
+    if (user == null) return const SizedBox.shrink();
     // Calculate stats locally from cached appointments for real-time accuracy
     int pendingCount = _appointments.where((a) => a.status == AppointmentStatus.pending).length;
     int acceptedCount = _appointments.where((a) => a.status == AppointmentStatus.accepted).length;
@@ -2389,6 +2400,7 @@ class _BarberDashboardScreenState extends ConsumerState<BarberDashboardScreen> {
 
   Widget _buildProfileTab(bool isDark) {
     final user = ref.watch(userProvider);
+    if (user == null) return const Center(child: CircularProgressIndicator());
     final isStaff = user.role == AppRole.barber;
     
     return RefreshIndicator(
@@ -2399,8 +2411,8 @@ class _BarberDashboardScreenState extends ConsumerState<BarberDashboardScreen> {
         slivers: [
           SliverToBoxAdapter(
             child: _buildScreenHeader(
-              isDark, 
-              title: user.role == AppRole.owner ? "Owner Profile" : "Barber Profile",
+              isDark,
+              title: user != null ? (user.role == AppRole.owner ? "Owner Profile" : "Barber Profile") : "Profile",
               subtitle: "My Account",
               trailing: InkWell(
                 onTap: () => ref.read(themeProvider.notifier).state = !isDark,
@@ -2804,6 +2816,7 @@ class _BarberDashboardScreenState extends ConsumerState<BarberDashboardScreen> {
 
   Widget _buildShopHeader(bool isDark) {
     final user = ref.watch(userProvider);
+    if (user == null) return const SizedBox.shrink();
     
     // Determine Display Info based on Role
     String mainTitle = user.role == AppRole.owner 
@@ -3037,7 +3050,7 @@ class _BarberDashboardScreenState extends ConsumerState<BarberDashboardScreen> {
              ),
              const SizedBox(height: 16),
              // Only Owner can set Shop Photo as their profile photo from here
-             if (ref.read(userProvider).role == AppRole.owner)
+             if (ref.read(userProvider)?.role == AppRole.owner)
                ElevatedButton.icon(
                  style: ElevatedButton.styleFrom(
                    backgroundColor: AppTheme.emerald,
@@ -3046,22 +3059,23 @@ class _BarberDashboardScreenState extends ConsumerState<BarberDashboardScreen> {
                  ),
                  onPressed: () async {
                    try {
-                      final user = ref.read(userProvider);
-                      final apiService = ref.read(apiServiceProvider);
-                      
-                      final updatedUser = await apiService.updateProfile(user.id, {
-                          'profilePhoto': photoPath
-                      });
+                       final user = ref.read(userProvider);
+                       if (user == null) return;
+                       final apiService = ref.read(apiServiceProvider);
+                       
+                       final updatedUser = await apiService.updateProfile(user.id, {
+                           'profilePhoto': photoPath
+                       });
   
-                      if (updatedUser != null) {
-                          ref.read(userProvider.notifier).state = updatedUser;
-                          if (mounted) {
-                              Navigator.pop(context);
-                              ScaffoldMessenger.of(context).showSnackBar(
-                                  const SnackBar(content: Text("Profile photo updated!"))
-                              );
-                          }
-                      }
+                       if (updatedUser != null) {
+                           await ref.read(userProvider.notifier).setUser(updatedUser);
+                           if (mounted) {
+                               Navigator.pop(context);
+                               ScaffoldMessenger.of(context).showSnackBar(
+                                   const SnackBar(content: Text("Profile photo updated!"))
+                               );
+                           }
+                       }
                    } catch (e) {
                        print("Error updating profile photo: $e");
                    }
@@ -3108,6 +3122,7 @@ class _NotificationsPopupContentState extends ConsumerState<_NotificationsPopupC
   Future<void> _loadNotifications() async {
     setState(() => _isLoading = true);
     final user = ref.read(userProvider);
+    if (user == null) return;
     final apiService = ref.read(apiServiceProvider);
     try {
       final notifs = await apiService.getNotifications(user.id);

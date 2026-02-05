@@ -14,6 +14,7 @@ import 'package:barber_sync/features/barber/staff_preview_screen.dart';
 import 'package:barber_sync/features/barber/edit_barber_profile_screen.dart';
 import 'package:barber_sync/features/barber/staff_services_screen.dart';
 import 'package:barber_sync/features/barber/staff_reviews_screen.dart';
+import 'package:barber_sync/core/providers/user_provider.dart';
 
 final routerProvider = Provider<GoRouter>((ref) {
   final user = ref.watch(userProvider);

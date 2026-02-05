@@ -31,6 +31,10 @@ class _BusinessAnalyticsScreenState extends ConsumerState<BusinessAnalyticsScree
   Future<void> _loadAnalytics() async {
     setState(() => _isLoading = true);
     final user = ref.read(userProvider);
+    if (user == null) {
+      if (mounted) setState(() => _isLoading = false);
+      return;
+    }
     final apiService = ref.read(apiServiceProvider);
     try {
       final analytics = await apiService.getOwnerAnalytics(user.id, period: _period, shopId: widget.shopData['id']);
