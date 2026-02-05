@@ -9,9 +9,14 @@ import 'package:barber_sync/services/notification_service.dart';
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
   
-  // Initialize Notifications
   final container = ProviderContainer();
-  await container.read(notificationServiceProvider).initialize();
+  
+  // Initialize Notifications (non-blocking, with error handling)
+  try {
+    await container.read(notificationServiceProvider).initialize();
+  } catch (e) {
+    debugPrint("⚠️ Notification init failed (non-fatal): $e");
+  }
 
   SystemChrome.setEnabledSystemUIMode(SystemUiMode.edgeToEdge);
   SystemChrome.setSystemUIOverlayStyle(
@@ -21,9 +26,10 @@ void main() async {
       systemNavigationBarDividerColor: Colors.transparent,
       statusBarIconBrightness: Brightness.light,
       systemNavigationBarIconBrightness: Brightness.light,
-      systemNavigationBarContrastEnforced: false, // Critical for transparent nav bar
+      systemNavigationBarContrastEnforced: false,
     ),
   );
+  
   runApp(
      UncontrolledProviderScope(
       container: container,

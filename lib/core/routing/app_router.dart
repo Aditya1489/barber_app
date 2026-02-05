@@ -16,8 +16,23 @@ import 'package:barber_sync/features/barber/staff_services_screen.dart';
 import 'package:barber_sync/features/barber/staff_reviews_screen.dart';
 
 final routerProvider = Provider<GoRouter>((ref) {
+  final user = ref.watch(userProvider);
+  
   return GoRouter(
-    initialLocation: '/login',
+    initialLocation: user == null ? '/login' : '/barber',
+    redirect: (context, state) {
+      final loggedIn = ref.read(userProvider) != null;
+      final isLoggingIn = state.matchedLocation == '/login';
+      final isRegistering = state.matchedLocation == '/register';
+
+      if (!loggedIn && !isLoggingIn && !isRegistering) {
+        return '/login';
+      }
+      if (loggedIn && (isLoggingIn || isRegistering)) {
+        return '/barber';
+      }
+      return null;
+    },
     routes: [
       GoRoute(
         path: '/login',

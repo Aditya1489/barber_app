@@ -95,11 +95,11 @@ class _BarberDashboardScreenState extends ConsumerState<BarberDashboardScreen> {
 
           // Sync Profile Photo to UserProvider
           final photo = _staffProfile!['photo'] ?? _staffProfile!['imageUrl'];
-          if (photo != null && photo != user.profilePhoto) {
-             Future.microtask(() {
-                ref.read(userProvider.notifier).state = user.copyWith(profilePhoto: photo);
-             });
-          }
+            if (photo != null && photo != user.profilePhoto) {
+               Future.microtask(() async {
+                  await ref.read(userProvider.notifier).setUser(user.copyWith(profilePhoto: photo));
+               });
+            }
         }
       }
     } catch (e) {
@@ -2515,7 +2515,10 @@ class _BarberDashboardScreenState extends ConsumerState<BarberDashboardScreen> {
                 
                 const SizedBox(height: 40),
                 InkWell(
-                  onTap: () => context.go('/login'),
+                  onTap: () async {
+                    await ref.read(userProvider.notifier).logout();
+                    if (mounted) context.go('/login');
+                  },
                   child: Container(
                     padding: const EdgeInsets.all(20),
                     decoration: BoxDecoration(

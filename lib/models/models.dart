@@ -210,6 +210,19 @@ class User {
       permissions: Map<String, bool>.from(json['permissions']),
     );
   }
+
+  Map<String, dynamic> toJson() {
+    return {
+      'id': id,
+      'name': name,
+      'email': email,
+      'phone': phone,
+      'role': role.name.toUpperCase(),
+      'profilePhoto': profilePhoto,
+      'permissions': permissions,
+    };
+  }
+
   User copyWith({
     String? id,
     String? name,

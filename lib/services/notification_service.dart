@@ -17,33 +17,49 @@ class NotificationService {
   NotificationService(this._ref);
 
   Future<void> initialize() async {
-    const AndroidInitializationSettings initializationSettingsAndroid =
-        AndroidInitializationSettings('@mipmap/ic_launcher');
+    try {
+      // Android settings
+      const AndroidInitializationSettings initializationSettingsAndroid =
+          AndroidInitializationSettings('@mipmap/ic_launcher');
 
-    const InitializationSettings initializationSettings = InitializationSettings(
-      android: initializationSettingsAndroid,
-    );
+      // iOS settings  
+      const DarwinInitializationSettings initializationSettingsIOS =
+          DarwinInitializationSettings(
+        requestAlertPermission: true,
+        requestBadgePermission: true,
+        requestSoundPermission: true,
+      );
 
-    await _flutterLocalNotificationsPlugin.initialize(
-      settings: initializationSettings,
-      onDidReceiveNotificationResponse: (NotificationResponse details) {
-        // Handle notification tap
-        print("Notification tapped: ${details.payload}");
-      },
-    );
-    
-    final AndroidFlutterLocalNotificationsPlugin? androidImplementation =
-        _flutterLocalNotificationsPlugin.resolvePlatformSpecificImplementation<
-            AndroidFlutterLocalNotificationsPlugin>();
-            
-    await androidImplementation?.requestNotificationsPermission();
+      // Combined settings
+      const InitializationSettings initializationSettings = InitializationSettings(
+        android: initializationSettingsAndroid,
+        iOS: initializationSettingsIOS,
+      );
+
+      // Use named parameters for v20.0.0+
+      await _flutterLocalNotificationsPlugin.initialize(
+        settings: initializationSettings,
+        onDidReceiveNotificationResponse: (NotificationResponse details) {
+          print("Notification tapped: ${details.payload}");
+        },
+      );
+      
+      // Request permissions for Android
+      final AndroidFlutterLocalNotificationsPlugin? androidImplementation =
+          _flutterLocalNotificationsPlugin.resolvePlatformSpecificImplementation<
+              AndroidFlutterLocalNotificationsPlugin>();
+              
+      await androidImplementation?.requestNotificationsPermission();
+      
+      print("✅ Notification service initialized successfully");
+    } catch (e) {
+      print("⚠️ Notification initialization error (non-fatal): $e");
+    }
   }
 
   void startPolling(String userId) {
     _pollingTimer?.cancel();
-    // Poll every 3 seconds for near real-time updates
     _pollingTimer = Timer.periodic(const Duration(seconds: 3), (_) => _checkNotifications(userId));
-    // Check immediately
     _checkNotifications(userId);
   }
 
@@ -52,23 +68,18 @@ class NotificationService {
   }
 
   Future<void> _checkNotifications(String userId) async {
-    print("Checking notifications for barber: $userId");
     try {
       final apiService = _ref.read(apiServiceProvider);
       final notifications = await apiService.getNotifications(userId);
-      print("Barber fetched ${notifications.length} notifications");
       
       bool foundNew = false;
       int unreadCount = 0;
       for (final notif in notifications) {
         if (!notif['isRead']) {
           unreadCount++;
-          print("Barber has unread notification: ${notif['id']}");
         }
         
-        // Check if not already alerted
         if (!notif['isRead'] && !_alertedIds.contains(notif['id'])) {
-          print("🚨 Barber alerting for: ${notif['title']}");
           _showLocalNotification(notif);
           _alertedIds.add(notif['id']);
           foundNew = true;
@@ -78,7 +89,6 @@ class NotificationService {
       _ref.read(unreadNotificationCountProvider.notifier).state = unreadCount;
 
       if (foundNew) {
-        print("Barber triggering dashboard refresh");
         _ref.read(refreshTriggerProvider.notifier).state++;
       }
     } catch (e) {
@@ -87,24 +97,36 @@ class NotificationService {
   }
 
   Future<void> _showLocalNotification(Map<String, dynamic> notif) async {
-    const AndroidNotificationDetails androidPlatformChannelSpecifics =
-        AndroidNotificationDetails(
-      'barber_sync_notifications',
-      'BarberSync Notifications',
-      channelDescription: 'Notifications for BarberSync appointments and updates',
-      importance: Importance.max,
-      priority: Priority.high,
-      ticker: 'ticker',
-    );
-    const NotificationDetails platformChannelSpecifics =
-        NotificationDetails(android: androidPlatformChannelSpecifics);
+    try {
+      const AndroidNotificationDetails androidDetails = AndroidNotificationDetails(
+        'barber_sync_notifications',
+        'BarberSync Notifications',
+        channelDescription: 'Notifications for BarberSync appointments and updates',
+        importance: Importance.max,
+        priority: Priority.high,
+      );
+      
+      const DarwinNotificationDetails iosDetails = DarwinNotificationDetails(
+        presentAlert: true,
+        presentBadge: true,
+        presentSound: true,
+      );
+      
+      const NotificationDetails details = NotificationDetails(
+        android: androidDetails,
+        iOS: iosDetails,
+      );
 
-    await _flutterLocalNotificationsPlugin.show(
-      id: notif['id'].hashCode, // Use hashcode of ID for unique int ID
-      title: notif['title'],
-      body: notif['body'],
-      notificationDetails: platformChannelSpecifics,
-      payload: notif['data'].toString(),
-    );
+      // Use ALL named parameters for v20.0.0+
+      await _flutterLocalNotificationsPlugin.show(
+        id: notif['id'].hashCode,
+        title: notif['title'] ?? 'Notification',
+        body: notif['body'] ?? '',
+        notificationDetails: details,
+        payload: notif['data']?.toString(),
+      );
+    } catch (e) {
+      print("⚠️ Error showing notification: $e");
+    }
   }
 }

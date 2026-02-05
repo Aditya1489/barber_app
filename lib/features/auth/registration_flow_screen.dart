@@ -190,7 +190,7 @@ class _RegistrationFlowScreenState extends ConsumerState<RegistrationFlowScreen>
       }
 
       final newUser = User.fromJson(authResponse['user']);
-      userProviderNotifier.state = newUser;
+      await userProviderNotifier.setUser(newUser);
 
       // 2. Create Shop or Update Profile
       if (_selectedRole == 'owner') {

@@ -42,7 +42,7 @@ class _LoginScreenState extends ConsumerState<LoginScreen> with TickerProviderSt
       final response = await apiService.login(_emailController.text, _passwordController.text);
       if (response != null && response['user'] != null) {
         final userData = User.fromJson(response['user']);
-        ref.read(userProvider.notifier).state = userData;
+        await ref.read(userProvider.notifier).setUser(userData);
 
         if (mounted) {
           if (userData.role != AppRole.customer) {
