@@ -11,6 +11,7 @@ import 'package:image_picker/image_picker.dart';
 import 'package:barber_sync/widgets/user_avatar.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_animate/flutter_animate.dart';
+import 'package:barber_sync/l10n/app_localizations.dart';
 
 class EditBarberProfileScreen extends ConsumerStatefulWidget {
   final Map<String, dynamic> staffBasicInfo;
@@ -38,18 +39,28 @@ class _EditBarberProfileScreenState extends ConsumerState<EditBarberProfileScree
   List<File> _pickedPortfolioImages = [];
   List<String> _existingPortfolioImages = [];
   
+  late AppLocalizations l10n;
+
+  @override
+  void didChangeDependencies() {
+    super.didChangeDependencies();
+    l10n = AppLocalizations.of(context)!;
+  }
+  
   // Skills
   List<String> _selectedSkills = [];
-  static const List<String> _availableSkills = [
-    "Fade",
-    "Beard Styling",
-    "Kids Haircut",
-    "Straight Razor",
-    "Scissor Cut",
-    "Hair Coloring",
-    "Shave",
-    "Buzz Cut",
-  ];
+  List<String> _getAvailableSkills(AppLocalizations l10n) {
+    return [
+      l10n.skillFade,
+      l10n.skillBeard,
+      l10n.skillKids,
+      l10n.skillRazor,
+      l10n.skillScissor,
+      l10n.skillColor,
+      l10n.skillShave,
+      l10n.skillBuzz,
+    ];
+  }
   
   // Tagging & Pinning (Local UI State for now)
   Map<String, String> _photoTags = {};
@@ -103,7 +114,7 @@ class _EditBarberProfileScreenState extends ConsumerState<EditBarberProfileScree
             children: [
               ListTile(
                 leading: const Icon(LucideIcons.image, color: AppTheme.emerald),
-                title: const Text('Choose Photo'),
+                title: Text(l10n.choosePhoto),
                 onTap: () {
                   Navigator.pop(context);
                   _pickImage();
@@ -112,7 +123,7 @@ class _EditBarberProfileScreenState extends ConsumerState<EditBarberProfileScree
               if (_pickedProfileImage != null || widget.staffBasicInfo['photo'] != null || widget.staffBasicInfo['imageUrl'] != null)
                 ListTile(
                   leading: const Icon(LucideIcons.trash2, color: Colors.redAccent),
-                  title: const Text('Remove Photo'),
+                  title: Text(l10n.removePhoto),
                   onTap: () {
                     Navigator.pop(context);
                     _removePhoto();
@@ -164,8 +175,8 @@ class _EditBarberProfileScreenState extends ConsumerState<EditBarberProfileScree
     if (totalImages >= 10) {
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(
-            content: Text("Maximum 10 portfolio images allowed"),
+          SnackBar(
+            content: Text(l10n.maxPortfolioLimit),
             backgroundColor: Colors.orange,
           ),
         );
@@ -278,10 +289,10 @@ class _EditBarberProfileScreenState extends ConsumerState<EditBarberProfileScree
             backgroundColor: AppTheme.emerald,
             behavior: SnackBarBehavior.floating,
             content: Row(
-              children: const [
-                Icon(LucideIcons.checkCircle2, color: Colors.white),
-                SizedBox(width: 12),
-                Text("Profile updated successfully!"),
+              children: [
+                const Icon(LucideIcons.checkCircle2, color: Colors.white),
+                const SizedBox(width: 12),
+                Text(l10n.profileUpdated),
               ],
             ),
           )
@@ -303,14 +314,14 @@ class _EditBarberProfileScreenState extends ConsumerState<EditBarberProfileScree
     showDialog(
       context: context,
       builder: (context) => AlertDialog(
-        title: const Text("Tag this work"),
+        title: Text(l10n.tagThisWork),
         content: TextField(
           controller: controller,
-          decoration: const InputDecoration(hintText: "e.g. Skin Fade, Beard Trim"),
+          decoration: InputDecoration(hintText: l10n.tagHint),
           autofocus: true,
         ),
         actions: [
-          TextButton(onPressed: () => Navigator.pop(context), child: const Text("Cancel")),
+          TextButton(onPressed: () => Navigator.pop(context), child: Text(l10n.cancel)),
           ElevatedButton(
             onPressed: () {
               setState(() {
@@ -319,7 +330,7 @@ class _EditBarberProfileScreenState extends ConsumerState<EditBarberProfileScree
               });
               Navigator.pop(context);
             },
-            child: const Text("Save"),
+            child: Text(l10n.save),
           ),
         ],
       ),
@@ -383,7 +394,7 @@ class _EditBarberProfileScreenState extends ConsumerState<EditBarberProfileScree
         icon: _isLoading 
           ? const SizedBox(width: 20, height: 20, child: CircularProgressIndicator(color: Colors.white, strokeWidth: 2))
           : const Icon(LucideIcons.save, color: Colors.white),
-        label: const Text("SAVE CHANGES", style: TextStyle(color: Colors.white, fontWeight: FontWeight.bold, letterSpacing: 1.2)),
+        label: Text(l10n.saveChanges.toUpperCase(), style: const TextStyle(color: Colors.white, fontWeight: FontWeight.bold, letterSpacing: 1.2)),
       ).animate().scale(curve: Curves.elasticOut) : null,
       body: GradientBackground(
         isDark: isDark,
@@ -411,10 +422,10 @@ class _EditBarberProfileScreenState extends ConsumerState<EditBarberProfileScree
                               
                               _buildTextField(
                                 isDark, 
-                                "Full Name (Public)", 
+                                l10n.fullNamePublic, 
                                 _nameController, 
                                 LucideIcons.user,
-                                hint: "Your name as customers will see it",
+                                hint: l10n.nameHint,
                               ),
                               const SizedBox(height: 24),
                               
@@ -457,7 +468,7 @@ class _EditBarberProfileScreenState extends ConsumerState<EditBarberProfileScree
           Row(
             mainAxisAlignment: MainAxisAlignment.spaceBetween,
             children: [
-              const Text("Profile Strength", style: TextStyle(fontWeight: FontWeight.bold, fontSize: 13)),
+              Text(l10n.profileStrength, style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 13)),
               Text("${(strength * 100).toInt()}%", style: TextStyle(fontWeight: FontWeight.w900, color: AppTheme.emerald, fontSize: 13)),
             ],
           ),
@@ -472,11 +483,11 @@ class _EditBarberProfileScreenState extends ConsumerState<EditBarberProfileScree
             ),
           ),
           const SizedBox(height: 16),
-          _buildChecklistItem(data['hasPhoto'], "Profile Photo"),
-          _buildChecklistItem(data['hasBio'], "Quality Bio / About"),
-          _buildChecklistItem(data['hasExp'], "Experience Level"),
-          _buildChecklistItem(data['hasPortfolio'], "Professional Portfolio"),
-          _buildChecklistItem(data['hasSkills'], "Skills & Expertise"),
+          _buildChecklistItem(data['hasPhoto'], l10n.profilePhoto),
+          _buildChecklistItem(data['hasBio'], l10n.qualityBio),
+          _buildChecklistItem(data['hasExp'], l10n.experienceLevel),
+          _buildChecklistItem(data['hasPortfolio'], l10n.professionalPortfolio),
+          _buildChecklistItem(data['hasSkills'], l10n.skillsExpertise),
         ],
       ),
     ).animate().fadeIn();
@@ -602,7 +613,7 @@ class _EditBarberProfileScreenState extends ConsumerState<EditBarberProfileScree
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        Text("Experience (Years)", style: TextStyle(fontWeight: FontWeight.bold, color: (isDark ? Colors.white : Colors.black).withOpacity(0.7))),
+        Text("${l10n.experienceLevel} (${l10n.upcoming})", style: TextStyle(fontWeight: FontWeight.bold, color: (isDark ? Colors.white : Colors.black).withOpacity(0.7))),
         const SizedBox(height: 12),
         Container(
           padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
@@ -628,7 +639,7 @@ class _EditBarberProfileScreenState extends ConsumerState<EditBarberProfileScree
                 child: Column(
                   children: [
                     Text("$_experience", style: const TextStyle(fontSize: 24, fontWeight: FontWeight.w900)),
-                    const Text("YEARS ACTIVE", style: TextStyle(fontSize: 9, fontWeight: FontWeight.bold, color: Colors.grey, letterSpacing: 1.5)),
+                    Text(l10n.yearsActive.toUpperCase(), style: const TextStyle(fontSize: 9, fontWeight: FontWeight.bold, color: Colors.grey, letterSpacing: 1.5)),
                   ],
                 ),
               ),
@@ -663,8 +674,8 @@ class _EditBarberProfileScreenState extends ConsumerState<EditBarberProfileScree
         Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            Text("Work Portfolio", style: TextStyle(fontWeight: FontWeight.bold, fontSize: 18, color: isDark ? Colors.white : Colors.black)),
-            Text("Your strongest weapon to win clients", style: TextStyle(fontSize: 11, color: (isDark ? Colors.white : Colors.black).withOpacity(0.4))),
+            Text(l10n.workPortfolio, style: TextStyle(fontWeight: FontWeight.bold, fontSize: 18, color: isDark ? Colors.white : Colors.black)),
+            Text(l10n.portfolioSubtitle, style: TextStyle(fontSize: 11, color: (isDark ? Colors.white : Colors.black).withOpacity(0.4))),
           ],
         ),
         InkWell(
@@ -673,10 +684,10 @@ class _EditBarberProfileScreenState extends ConsumerState<EditBarberProfileScree
             padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
             decoration: BoxDecoration(color: AppTheme.emerald.withOpacity(0.1), borderRadius: BorderRadius.circular(12)),
             child: Row(
-              children: const [
-                Icon(LucideIcons.plus, color: AppTheme.emerald, size: 16),
-                SizedBox(width: 4),
-                Text("ADD", style: TextStyle(color: AppTheme.emerald, fontWeight: FontWeight.bold, fontSize: 12)),
+              children: [
+                const Icon(LucideIcons.plus, color: AppTheme.emerald, size: 16),
+                const SizedBox(width: 4),
+                Text(l10n.add.toUpperCase(), style: const TextStyle(color: AppTheme.emerald, fontWeight: FontWeight.bold, fontSize: 12)),
               ],
             ),
           ),
@@ -701,10 +712,10 @@ class _EditBarberProfileScreenState extends ConsumerState<EditBarberProfileScree
           border: Border.all(color: (isDark ? Colors.white : Colors.black).withOpacity(0.05), width: 2),
         ),
         child: Column(
-          children: const [
-            Icon(LucideIcons.imagePlus, size: 40, color: Colors.grey),
-            SizedBox(height: 12),
-            Text("No photos added yet", style: TextStyle(color: Colors.grey, fontWeight: FontWeight.bold)),
+          children: [
+            const Icon(LucideIcons.imagePlus, size: 40, color: Colors.grey),
+            const SizedBox(height: 12),
+            Text(l10n.noPhotosAdded, style: const TextStyle(color: Colors.grey, fontWeight: FontWeight.bold)),
           ],
         ),
       );
@@ -789,7 +800,7 @@ class _EditBarberProfileScreenState extends ConsumerState<EditBarberProfileScree
                      const SizedBox(width: 4),
                      Expanded(
                        child: Text(
-                         _photoTags[path] ?? "Add tag...", 
+                         _photoTags[path] ?? l10n.addTag, 
                          style: const TextStyle(color: Colors.white, fontSize: 10, fontWeight: FontWeight.bold),
                          maxLines: 1,
                        ),
@@ -852,9 +863,9 @@ class _EditBarberProfileScreenState extends ConsumerState<EditBarberProfileScree
             ),
           ),
           const SizedBox(width: 20),
-          const Text(
-            "Account", // Changed from "Edit Profile" as per UX request to feel "Empowering"
-            style: TextStyle(fontSize: 24, fontWeight: FontWeight.w900),
+          Text(
+            l10n.myAccount, // Changed from "Edit Profile" as per UX request to feel "Empowering"
+            style: const TextStyle(fontSize: 24, fontWeight: FontWeight.w900),
           ),
           const Spacer(),
           _buildPreviewButton(isDark),
@@ -869,7 +880,7 @@ class _EditBarberProfileScreenState extends ConsumerState<EditBarberProfileScree
         context.push('/staff-preview', extra: _fullProfile ?? widget.staffBasicInfo);
       },
       icon: const Icon(LucideIcons.eye, size: 18),
-      label: const Text("PREVIEW"),
+      label: Text(l10n.preview.toUpperCase()),
       style: TextButton.styleFrom(
         foregroundColor: AppTheme.emerald,
         padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
@@ -887,15 +898,15 @@ class _EditBarberProfileScreenState extends ConsumerState<EditBarberProfileScree
           children: [
             Icon(LucideIcons.award, size: 20, color: AppTheme.emerald),
             const SizedBox(width: 8),
-            const Text(
-              "Skills & Expertise",
-              style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold),
+            Text(
+              l10n.skillsExpertise,
+              style: const TextStyle(fontSize: 16, fontWeight: FontWeight.bold),
             ),
           ],
         ),
         const SizedBox(height: 4),
         Text(
-          "Select your specialties",
+          l10n.selectSpecialties,
           style: TextStyle(
             fontSize: 12,
             color: (isDark ? Colors.white : Colors.black).withOpacity(0.5),
@@ -905,7 +916,7 @@ class _EditBarberProfileScreenState extends ConsumerState<EditBarberProfileScree
         Wrap(
           spacing: 8,
           runSpacing: 8,
-          children: _availableSkills.map((skill) {
+          children: _getAvailableSkills(l10n).map((skill) {
             final isSelected = _selectedSkills.contains(skill);
             return InkWell(
               onTap: () {

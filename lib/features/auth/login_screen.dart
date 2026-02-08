@@ -10,6 +10,8 @@ import 'package:barber_sync/core/providers/user_provider.dart';
 import 'package:barber_sync/services/api_service.dart';
 import 'package:barber_sync/models/models.dart';
 import 'package:barber_sync/services/notification_service.dart';
+import 'package:barber_sync/services/fcm_service.dart';
+import 'package:barber_sync/l10n/app_localizations.dart';
 
 class LoginScreen extends ConsumerStatefulWidget {
   const LoginScreen({super.key});
@@ -46,6 +48,8 @@ class _LoginScreenState extends ConsumerState<LoginScreen> with TickerProviderSt
 
         if (mounted) {
           if (userData.role != AppRole.customer) {
+            // Initialize FCM for push notifications
+            ref.read(fcmServiceProvider).initialize(userData.id);
             ref.read(notificationServiceProvider).startPolling(userData.id);
             context.go('/barber');
           } else {
@@ -122,6 +126,7 @@ class _LoginScreenState extends ConsumerState<LoginScreen> with TickerProviderSt
   }
 
   Widget _buildRoleSelection() {
+    final l10n = AppLocalizations.of(context)!;
     return Container(
       constraints: const BoxConstraints(maxWidth: 400),
       padding: const EdgeInsets.all(24.0),
@@ -132,8 +137,8 @@ class _LoginScreenState extends ConsumerState<LoginScreen> with TickerProviderSt
           _buildLogo(),
           const SizedBox(height: 60),
             _buildRoleButton(
-              "Continue as Barber / Owner",
-              "Manage your shop & clients",
+              l10n.continueAsBarberOwner,
+              l10n.manageShopClients,
               LucideIcons.scissors,
               AppTheme.emerald,
               () => setState(() => selectedRole = "BARBER"),
@@ -145,6 +150,7 @@ class _LoginScreenState extends ConsumerState<LoginScreen> with TickerProviderSt
   }
 
   Widget _buildLogo() {
+    final l10n = AppLocalizations.of(context)!;
     return Column(
       children: [
         Container(
@@ -164,7 +170,7 @@ class _LoginScreenState extends ConsumerState<LoginScreen> with TickerProviderSt
         ),
         const SizedBox(height: 16),
         Text(
-          "BarberSync",
+          l10n.appTitle,
           style: TextStyle(
             color: isDark ? Colors.white : Colors.black,
             fontSize: 40,
@@ -172,7 +178,7 @@ class _LoginScreenState extends ConsumerState<LoginScreen> with TickerProviderSt
           ),
         ),
         Text(
-          "Professional Grooming Marketplace",
+          l10n.professionalGrooming,
           style: TextStyle(
             color: (isDark ? Colors.white : Colors.black).withOpacity(0.6),
             fontSize: 14,
@@ -221,6 +227,8 @@ class _LoginScreenState extends ConsumerState<LoginScreen> with TickerProviderSt
   }
 
   Widget _buildAuthForm() {
+    final l10n = AppLocalizations.of(context)!;
+
     return SafeArea(
       child: Padding(
         padding: const EdgeInsets.all(24.0),
@@ -237,17 +245,17 @@ class _LoginScreenState extends ConsumerState<LoginScreen> with TickerProviderSt
           ),
           const SizedBox(height: 32),
           Text(
-            isLogin ? "Welcome Back" : "Join BarberSync",
+            isLogin ? l10n.welcomeBack : l10n.joinApp,
             style: const TextStyle(fontSize: 32, fontWeight: FontWeight.w900),
           ),
           Text(
-            selectedRole == "CUSTOMER" ? "Customer Account" : "Barber & Shop Management",
+            selectedRole == "CUSTOMER" ? l10n.customerAccount : l10n.barberAdmin,
             style: TextStyle(color: (isDark ? Colors.white : Colors.black).withOpacity(0.6)),
           ),
           const SizedBox(height: 40),
-          _buildInput(LucideIcons.mail, "Email Address", _emailController),
+          _buildInput(LucideIcons.mail, l10n.emailAddress, _emailController),
           const SizedBox(height: 16),
-          _buildInput(LucideIcons.lock, "Password", _passwordController, isPassword: true),
+          _buildInput(LucideIcons.lock, l10n.password, _passwordController, isPassword: true),
           const SizedBox(height: 24),
           SizedBox(
             width: double.infinity,
@@ -255,7 +263,7 @@ class _LoginScreenState extends ConsumerState<LoginScreen> with TickerProviderSt
               onPressed: _isLoading ? null : _handleLogin,
               child: _isLoading 
                 ? const SizedBox(width: 20, height: 20, child: CircularProgressIndicator(color: Colors.white, strokeWidth: 2))
-                : Text(isLogin ? "Login" : "Create Account"),
+                : Text(isLogin ? l10n.login : l10n.createAccount),
             ),
           ),
           const SizedBox(height: 24),
@@ -263,7 +271,7 @@ class _LoginScreenState extends ConsumerState<LoginScreen> with TickerProviderSt
             child: TextButton(
               onPressed: () => context.push('/register'),
               child: Text(
-                isLogin ? "Don't have an account? Sign Up" : "Already have an account? Log In",
+                isLogin ? l10n.noAccount : l10n.haveAccount,
                 style: const TextStyle(color: AppTheme.darkAccent, fontWeight: FontWeight.bold),
               ),
             ),

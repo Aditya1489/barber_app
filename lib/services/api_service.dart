@@ -438,8 +438,43 @@ class ApiService {
       }
       return null;
     } catch (e) {
-      AppLogger.error('Error fetching staff review stats: $e');
+      AppLogger.error('Error fetching staff review stats: $e', e);
       return null;
+    }
+  }
+
+  Future<bool> updateFCMToken(String userId, String token) async {
+    try {
+      final response = await _dio.post('/profile/$userId/fcm-token', data: {
+        'fcm_token': token,
+      });
+      return response.statusCode == 200;
+    } catch (e) {
+      AppLogger.error('Error updating FCM token: $e', e);
+      return false;
+    }
+  }
+
+  Future<List<Map<String, dynamic>>> getAuditTrail({
+    required String ownerId,
+    String? shopId,
+    String? actionType,
+  }) async {
+    try {
+      final response = await _dio.get(
+        '/analytics/owner/$ownerId/audit-trail',
+        queryParameters: {
+          if (shopId != null) 'shop_id': shopId,
+          if (actionType != null) 'action_type': actionType,
+        },
+      );
+      if (response.statusCode == 200) {
+        return List<Map<String, dynamic>>.from(response.data);
+      }
+      return [];
+    } catch (e) {
+      AppLogger.error('Error fetching audit trail: $e', e);
+      return [];
     }
   }
 }

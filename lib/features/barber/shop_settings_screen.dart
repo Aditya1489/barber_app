@@ -8,6 +8,7 @@ import 'package:barber_sync/widgets/gradient_background.dart';
 import 'package:barber_sync/core/theme/app_theme.dart';
 import 'package:barber_sync/core/providers/theme_provider.dart';
 import 'package:barber_sync/services/api_service.dart';
+import 'package:barber_sync/l10n/app_localizations.dart';
 
 class ShopSettingsScreen extends ConsumerStatefulWidget {
   final Map<String, dynamic> shopData;
@@ -91,12 +92,12 @@ class _ShopSettingsScreenState extends ConsumerState<ShopSettingsScreen> {
         setState(() => _isLoading = false);
         if (result != null) {
           ScaffoldMessenger.of(context).showSnackBar(
-            const SnackBar(content: Text('Shop settings updated successfully')),
+            SnackBar(content: Text(AppLocalizations.of(context)!.shopSettingsUpdated)),
           );
           context.pop(true); // Return true to indicate update
         } else {
           ScaffoldMessenger.of(context).showSnackBar(
-            const SnackBar(content: Text('Failed to update shop')),
+            SnackBar(content: Text(AppLocalizations.of(context)!.shopUpdateFailed)),
           );
         }
       }
@@ -128,15 +129,15 @@ class _ShopSettingsScreenState extends ConsumerState<ShopSettingsScreen> {
                   padding: const EdgeInsets.all(24),
                   child: Column(
                     children: [
-                      _buildInput(isDark, "Shop Name", _nameController, LucideIcons.store),
+                      _buildInput(isDark, AppLocalizations.of(context)!.shopName, _nameController, LucideIcons.store),
                       const SizedBox(height: 16),
-                      _buildInput(isDark, "Phone Number", _phoneController, LucideIcons.phone),
+                      _buildInput(isDark, AppLocalizations.of(context)!.phoneNumber, _phoneController, LucideIcons.phone),
                       const SizedBox(height: 16),
-                      _buildInput(isDark, "Address", _addressController, LucideIcons.mapPin, maxLines: 2),
+                      _buildInput(isDark, AppLocalizations.of(context)!.address, _addressController, LucideIcons.mapPin, maxLines: 2),
                       const SizedBox(height: 16),
-                      _buildInput(isDark, "Description", _descriptionController, LucideIcons.fileText, maxLines: 3),
+                      _buildInput(isDark, AppLocalizations.of(context)!.description, _descriptionController, LucideIcons.fileText, maxLines: 3),
                       const SizedBox(height: 24),
-                      _buildPhotosSection(isDark),
+                      _buildPhotosSection(isDark, AppLocalizations.of(context)!),
                       const SizedBox(height: 100), // Spacing
                     ],
                   ),
@@ -170,9 +171,9 @@ class _ShopSettingsScreenState extends ConsumerState<ShopSettingsScreen> {
             ),
           ),
           const SizedBox(width: 20),
-          const Text(
-            "Shop Settings",
-            style: TextStyle(fontSize: 24, fontWeight: FontWeight.w900),
+          Text(
+            AppLocalizations.of(context)!.shopSettings,
+            style: const TextStyle(fontSize: 24, fontWeight: FontWeight.w900),
           ),
         ],
       ),
@@ -225,12 +226,12 @@ class _ShopSettingsScreenState extends ConsumerState<ShopSettingsScreen> {
     );
   }
 
-  Widget _buildPhotosSection(bool isDark) {
+  Widget _buildPhotosSection(bool isDark, AppLocalizations l10n) {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
         Text(
-          "SHOP PHOTOS", 
+          l10n.shopPhotos.toUpperCase(), 
           style: TextStyle(
             fontSize: 10, 
             fontWeight: FontWeight.bold, 
@@ -268,7 +269,7 @@ class _ShopSettingsScreenState extends ConsumerState<ShopSettingsScreen> {
                       Icon(LucideIcons.camera, color: (isDark ? Colors.white : Colors.black).withOpacity(0.4)),
                       const SizedBox(height: 4),
                       Text(
-                        "ADD", 
+                        l10n.add.toUpperCase(), 
                         style: TextStyle(
                           fontSize: 10, 
                           fontWeight: FontWeight.bold, 
@@ -355,7 +356,7 @@ class _ShopSettingsScreenState extends ConsumerState<ShopSettingsScreen> {
         onPressed: _isLoading ? null : _saveChanges,
         child: _isLoading 
           ? const SizedBox(width: 20, height: 20, child: CircularProgressIndicator(color: Colors.white, strokeWidth: 2))
-          : const Text("SAVE CHANGES", style: TextStyle(fontWeight: FontWeight.w900, letterSpacing: 1.5)),
+          : Text(AppLocalizations.of(context)!.saveChanges.toUpperCase(), style: const TextStyle(fontWeight: FontWeight.w900, letterSpacing: 1.5)),
       ),
     );
   }

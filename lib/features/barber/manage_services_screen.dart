@@ -6,6 +6,7 @@ import 'package:barber_sync/widgets/gradient_background.dart';
 import 'package:barber_sync/core/theme/app_theme.dart';
 import 'package:barber_sync/core/providers/theme_provider.dart';
 import 'package:barber_sync/services/api_service.dart';
+import 'package:barber_sync/l10n/app_localizations.dart';
 
 class ManageServicesScreen extends ConsumerStatefulWidget {
   final Map<String, dynamic> shopData;
@@ -19,6 +20,13 @@ class ManageServicesScreen extends ConsumerStatefulWidget {
 class _ManageServicesScreenState extends ConsumerState<ManageServicesScreen> {
   List<dynamic> _services = [];
   bool _isLoading = true;
+  late AppLocalizations l10n;
+
+  @override
+  void didChangeDependencies() {
+    super.didChangeDependencies();
+    l10n = AppLocalizations.of(context)!;
+  }
 
   @override
   void initState() {
@@ -39,9 +47,10 @@ class _ManageServicesScreenState extends ConsumerState<ManageServicesScreen> {
       }
     } catch (e) {
       if (mounted) {
+        final l10n = AppLocalizations.of(context)!;
         setState(() => _isLoading = false);
         ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('Error loading services: $e')),
+          SnackBar(content: Text('${l10n.error}: $e')),
         );
       }
     }
@@ -51,6 +60,8 @@ class _ManageServicesScreenState extends ConsumerState<ManageServicesScreen> {
     final nameController = TextEditingController(text: service?['name']);
     final priceController = TextEditingController(text: service?['price']?.toString());
     final durationController = TextEditingController(text: service?['duration']?.toString());
+    
+    final l10n = AppLocalizations.of(context)!;
     
     showModalBottomSheet(
       context: context,
@@ -67,14 +78,14 @@ class _ManageServicesScreenState extends ConsumerState<ManageServicesScreen> {
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
             Text(
-              service == null ? "Add Service" : "Edit Service",
+              service == null ? l10n.addService : l10n.editService,
               style: const TextStyle(fontSize: 24, fontWeight: FontWeight.bold),
             ),
             const SizedBox(height: 24),
             TextField(
               controller: nameController,
               decoration: InputDecoration(
-                labelText: "Service Name",
+                labelText: l10n.serviceName,
                 filled: true,
                 fillColor: (ref.watch(themeProvider) ? Colors.white : Colors.black).withOpacity(0.05),
                 border: OutlineInputBorder(borderRadius: BorderRadius.circular(16), borderSide: BorderSide.none),
@@ -88,7 +99,7 @@ class _ManageServicesScreenState extends ConsumerState<ManageServicesScreen> {
                     controller: priceController,
                     keyboardType: TextInputType.number,
                     decoration: InputDecoration(
-                      labelText: "Price (\$)",
+                      labelText: l10n.price,
                       filled: true,
                       fillColor: (ref.watch(themeProvider) ? Colors.white : Colors.black).withOpacity(0.05),
                       border: OutlineInputBorder(borderRadius: BorderRadius.circular(16), borderSide: BorderSide.none),
@@ -101,7 +112,7 @@ class _ManageServicesScreenState extends ConsumerState<ManageServicesScreen> {
                     controller: durationController,
                     keyboardType: TextInputType.number,
                     decoration: InputDecoration(
-                      labelText: "Duration (min)",
+                      labelText: l10n.durationMin,
                       filled: true,
                       fillColor: (ref.watch(themeProvider) ? Colors.white : Colors.black).withOpacity(0.05),
                       border: OutlineInputBorder(borderRadius: BorderRadius.circular(16), borderSide: BorderSide.none),
@@ -130,7 +141,7 @@ class _ManageServicesScreenState extends ConsumerState<ManageServicesScreen> {
                     );
                   }
                 },
-                child: const Text("Save Service", style: TextStyle(color: Colors.white, fontWeight: FontWeight.bold)),
+                child: Text(l10n.saveService, style: const TextStyle(color: Colors.white, fontWeight: FontWeight.bold)),
               ),
             ),
           ],
@@ -167,14 +178,15 @@ class _ManageServicesScreenState extends ConsumerState<ManageServicesScreen> {
   }
 
   Future<void> _deleteService(String serviceId) async {
+    final l10n = AppLocalizations.of(context)!;
     final confirm = await showDialog<bool>(
       context: context,
       builder: (context) => AlertDialog(
-        title: const Text("Delete Service?"),
-        content: const Text("This cannot be undone."),
+        title: Text(l10n.deleteServiceConfirm),
+        content: Text(l10n.cannotBeUndone),
         actions: [
-          TextButton(onPressed: () => Navigator.pop(context, false), child: const Text("Cancel")),
-          TextButton(onPressed: () => Navigator.pop(context, true), child: const Text("Delete", style: TextStyle(color: Colors.red))),
+          TextButton(onPressed: () => Navigator.pop(context, false), child: Text(l10n.cancel)),
+          TextButton(onPressed: () => Navigator.pop(context, true), child: Text(l10n.delete, style: const TextStyle(color: Colors.red))),
         ],
       ),
     );
@@ -188,7 +200,7 @@ class _ManageServicesScreenState extends ConsumerState<ManageServicesScreen> {
           _loadServices();
         } else {
           ScaffoldMessenger.of(context).showSnackBar(
-            const SnackBar(content: Text('Failed to delete service. Please try again.'))
+            SnackBar(content: Text(l10n.serviceDeleteFailed))
           );
           setState(() => _isLoading = false);
         }
@@ -199,6 +211,7 @@ class _ManageServicesScreenState extends ConsumerState<ManageServicesScreen> {
   @override
   Widget build(BuildContext context) {
     final isDark = ref.watch(themeProvider);
+    final l10n = AppLocalizations.of(context)!;
 
     return Scaffold(
       extendBody: true,
@@ -206,7 +219,7 @@ class _ManageServicesScreenState extends ConsumerState<ManageServicesScreen> {
         onPressed: () => _showServiceSheet(),
         backgroundColor: AppTheme.emerald,
         icon: const Icon(LucideIcons.plus, color: Colors.white),
-        label: const Text("Add Service", style: TextStyle(color: Colors.white, fontWeight: FontWeight.bold)),
+        label: Text(l10n.addService, style: const TextStyle(color: Colors.white, fontWeight: FontWeight.bold)),
       ),
       body: GradientBackground(
         isDark: isDark,
@@ -218,7 +231,7 @@ class _ManageServicesScreenState extends ConsumerState<ManageServicesScreen> {
                 child: _isLoading 
                   ? const Center(child: CircularProgressIndicator())
                   : _services.isEmpty 
-                    ? Center(child: Text("No services found", style: TextStyle(color: (isDark ? Colors.white : Colors.black).withOpacity(0.4))))
+                    ? Center(child: Text(l10n.noServicesFound, style: TextStyle(color: (isDark ? Colors.white : Colors.black).withOpacity(0.4))))
                     : ListView.builder(
                         padding: const EdgeInsets.all(24),
                         itemCount: _services.length,
@@ -249,9 +262,9 @@ class _ManageServicesScreenState extends ConsumerState<ManageServicesScreen> {
             ),
           ),
           const SizedBox(width: 20),
-          const Text(
-            "Manage Services",
-            style: TextStyle(fontSize: 24, fontWeight: FontWeight.w900),
+          Text(
+            l10n.manageServices,
+            style: const TextStyle(fontSize: 24, fontWeight: FontWeight.w900),
           ),
         ],
       ),

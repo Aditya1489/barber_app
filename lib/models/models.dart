@@ -6,10 +6,15 @@ enum AppRole {
 
 enum AppointmentStatus {
   pending,
-  accepted,
-  cancelled,
+  awaitingCustomerConfirmation,
+  confirmed,
+  inProgress,
   completed,
+  cancelled,
+  cancelledByCustomer,
+  cancelledByBarber,
   noShow,
+  expired,
 }
 
 class Service {

@@ -8,6 +8,7 @@ import 'package:barber_sync/core/providers/theme_provider.dart';
 import 'package:barber_sync/services/api_service.dart';
 import 'package:barber_sync/widgets/user_avatar.dart';
 import 'package:flutter_animate/flutter_animate.dart';
+import 'package:barber_sync/l10n/app_localizations.dart';
 
 class ShopPreviewScreen extends ConsumerStatefulWidget {
   final Map<String, dynamic> shopData;
@@ -25,7 +26,16 @@ class _ShopPreviewScreenState extends ConsumerState<ShopPreviewScreen> {
   final ScrollController _scrollController = ScrollController();
   final PageController _photoPageController = PageController();
   int _currentPhotoIndex = 0;
-  String _activeSection = "About";
+  String? _activeSectionKey;
+
+  late AppLocalizations l10n;
+
+  @override
+  void didChangeDependencies() {
+    super.didChangeDependencies();
+    l10n = AppLocalizations.of(context)!;
+    _activeSectionKey ??= 'about';
+  }
 
   @override
   void initState() {
@@ -156,7 +166,7 @@ class _ShopPreviewScreenState extends ConsumerState<ShopPreviewScreen> {
                           color: AppTheme.emerald,
                           borderRadius: BorderRadius.circular(8),
                         ),
-                        child: const Text("OPEN NOW", style: TextStyle(color: Colors.white, fontSize: 9, fontWeight: FontWeight.bold, letterSpacing: 0.5)),
+                        child: Text(l10n.openNow, style: const TextStyle(color: Colors.white, fontSize: 9, fontWeight: FontWeight.bold, letterSpacing: 0.5)),
                       ),
                       const SizedBox(width: 8),
                       Container(
@@ -165,7 +175,7 @@ class _ShopPreviewScreenState extends ConsumerState<ShopPreviewScreen> {
                           color: Colors.white.withOpacity(0.2),
                           borderRadius: BorderRadius.circular(8),
                         ),
-                        child: const Text("~15 MIN WAIT", style: TextStyle(color: Colors.white, fontSize: 9, fontWeight: FontWeight.bold, letterSpacing: 0.5)),
+                        child: Text(l10n.waitTime, style: const TextStyle(color: Colors.white, fontSize: 9, fontWeight: FontWeight.bold, letterSpacing: 0.5)),
                       ),
                     ],
                   ).animate().fadeIn(delay: 200.ms).slideX(begin: -0.1),
@@ -175,9 +185,9 @@ class _ShopPreviewScreenState extends ConsumerState<ShopPreviewScreen> {
                     style: const TextStyle(fontSize: 32, fontWeight: FontWeight.w900, color: Colors.white),
                   ).animate().fadeIn(delay: 300.ms).slideX(begin: -0.1),
                   const SizedBox(height: 4),
-                  const Text(
-                    "Modern Cuts · Clean Fades · Men's Grooming",
-                    style: TextStyle(fontSize: 13, color: Colors.white70, fontWeight: FontWeight.w500),
+                  Text(
+                    l10n.shopSubtitle,
+                    style: const TextStyle(fontSize: 13, color: Colors.white70, fontWeight: FontWeight.w500),
                   ).animate().fadeIn(delay: 400.ms).slideX(begin: -0.1),
                 ],
               ),
@@ -189,7 +199,13 @@ class _ShopPreviewScreenState extends ConsumerState<ShopPreviewScreen> {
   }
 
   Widget _buildNavigationChips(bool isDark) {
-    final sections = ["About", "Team", "Services", "Reviews"];
+    final Map<String, String> sectionMap = {
+      'about': l10n.about,
+      'team': l10n.team,
+      'services': l10n.services,
+      'reviews': l10n.reviews,
+    };
+    final sectionKeys = sectionMap.keys.toList();
     return Container(
       color: isDark ? const Color(0xFF0C0C0E) : Colors.white,
       padding: const EdgeInsets.symmetric(vertical: 16),
@@ -197,16 +213,16 @@ class _ShopPreviewScreenState extends ConsumerState<ShopPreviewScreen> {
         scrollDirection: Axis.horizontal,
         padding: const EdgeInsets.symmetric(horizontal: 20),
         child: Row(
-          children: sections.map((s) => Padding(
+          children: sectionKeys.map((key) => Padding(
             padding: const EdgeInsets.only(right: 12),
             child: ChoiceChip(
-              label: Text(s),
-              selected: _activeSection == s,
-              onSelected: (val) { if(val) setState(() => _activeSection = s); },
+              label: Text(sectionMap[key]!),
+              selected: _activeSectionKey == key,
+              onSelected: (val) { if(val) setState(() => _activeSectionKey = key); },
               backgroundColor: isDark ? Colors.white.withOpacity(0.05) : Colors.black.withOpacity(0.05),
               selectedColor: AppTheme.emerald,
               labelStyle: TextStyle(
-                color: _activeSection == s ? Colors.white : (isDark ? Colors.white70 : Colors.black87),
+                color: _activeSectionKey == key ? Colors.white : (isDark ? Colors.white70 : Colors.black87),
                 fontWeight: FontWeight.bold,
                 fontSize: 12
               ),
@@ -228,18 +244,11 @@ class _ShopPreviewScreenState extends ConsumerState<ShopPreviewScreen> {
         children: [
           // 1. About Section
           const SizedBox(height: 8),
-          _sectionTitle("The Experience"),
+          _sectionTitle(l10n.theExperience),
           const SizedBox(height: 12),
           Text(
-            widget.shopData['description'] ?? "A modern neighborhood barber shop offering precision haircuts and grooming services by experienced professionals.",
-            maxLines: 2,
-            overflow: TextOverflow.ellipsis,
-            style: TextStyle(
-              color: (isDark ? Colors.white : Colors.black).withOpacity(0.7), 
-              fontSize: 14, 
-              height: 1.6,
-              fontWeight: FontWeight.w500
-            ),
+            widget.shopData['description'] ?? l10n.defaultShopDescription,
+            style: TextStyle(fontSize: 14, color: (isDark ? Colors.white : Colors.black).withOpacity(0.6), height: 1.6),
           ),
           const SizedBox(height: 32),
 
@@ -247,8 +256,8 @@ class _ShopPreviewScreenState extends ConsumerState<ShopPreviewScreen> {
           Row(
             mainAxisAlignment: MainAxisAlignment.spaceBetween,
             children: [
-              _sectionTitle("Meet the Team"),
-              Text("${_staff.length} Masters", style: const TextStyle(fontSize: 11, color: AppTheme.emerald, fontWeight: FontWeight.bold)),
+              _sectionTitle(l10n.meetTheTeam),
+              Text("${_staff.length} ${l10n.masters}", style: const TextStyle(fontSize: 11, color: AppTheme.emerald, fontWeight: FontWeight.bold)),
             ],
           ),
           const SizedBox(height: 16),
@@ -260,7 +269,7 @@ class _ShopPreviewScreenState extends ConsumerState<ShopPreviewScreen> {
           const SizedBox(height: 32),
 
           // 4. Services
-          _sectionTitle("Our Services"),
+          _sectionTitle(l10n.ourServices),
           const SizedBox(height: 16),
           _buildServicesGrouped(isDark),
           const SizedBox(height: 120), // Bottom padding for CTA
@@ -277,7 +286,7 @@ class _ShopPreviewScreenState extends ConsumerState<ShopPreviewScreen> {
   }
 
   Widget _buildStaffGrid(bool isDark) {
-    if (_staff.isEmpty) return const Text("No staff added yet.");
+    if (_staff.isEmpty) return Text(l10n.noStaffFound);
 
     return SizedBox(
       height: 140,
@@ -322,7 +331,7 @@ class _ShopPreviewScreenState extends ConsumerState<ShopPreviewScreen> {
                     maxLines: 1,
                   ),
                   Text(
-                    isOwner ? "Owner" : (member['role'] ?? "Staff"),
+                    isOwner ? l10n.owner : (member['role'] ?? l10n.staff),
                     style: TextStyle(fontSize: 10, color: (isDark ? Colors.white : Colors.black).withOpacity(0.5)),
                   ),
                 ],
@@ -345,9 +354,9 @@ class _ShopPreviewScreenState extends ConsumerState<ShopPreviewScreen> {
       child: Row(
         mainAxisAlignment: MainAxisAlignment.spaceAround,
         children: [
-          _trustIcon(LucideIcons.heart, "Loved by 200+ clients"),
-          _trustIcon(LucideIcons.shieldCheck, "Clean & Hygienic"),
-          _trustIcon(LucideIcons.medal, "Certified Masters"),
+          _trustIcon(LucideIcons.heart, l10n.lovedByClients),
+          _trustIcon(LucideIcons.shieldCheck, l10n.cleanHygienic),
+          _trustIcon(LucideIcons.medal, l10n.certifiedMasters),
         ],
       ),
     );
@@ -364,14 +373,14 @@ class _ShopPreviewScreenState extends ConsumerState<ShopPreviewScreen> {
   }
 
   Widget _buildServicesGrouped(bool isDark) {
-    if (_services.isEmpty) return const Text("No services available.");
+    if (_services.isEmpty) return Text(l10n.noServices);
 
     // Simple grouping for preview (In real app, categories would come from DB)
     return Column(
       children: [
-        _serviceCategory(isDark, "Popular Picks", _services.take(2).toList(), isHot: true),
+        _serviceCategory(isDark, l10n.popularPicks, _services.take(2).toList(), isHot: true),
         const SizedBox(height: 24),
-        _serviceCategory(isDark, "Main Menu", _services.skip(2).toList()),
+        _serviceCategory(isDark, l10n.mainMenu, _services.skip(2).toList()),
       ],
     );
   }
@@ -421,14 +430,14 @@ class _ShopPreviewScreenState extends ConsumerState<ShopPreviewScreen> {
                       Container(
                         padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
                         decoration: BoxDecoration(color: AppTheme.emerald.withOpacity(0.1), borderRadius: BorderRadius.circular(4)),
-                        child: const Text("TOP", style: TextStyle(color: AppTheme.emerald, fontSize: 8, fontWeight: FontWeight.bold)),
+                        child: Text(l10n.top, style: const TextStyle(color: AppTheme.emerald, fontSize: 8, fontWeight: FontWeight.bold)),
                       ),
                     ]
                   ],
                 ),
                 const SizedBox(height: 4),
                 Text(
-                  service['description'] ?? "Professional ${service['name'].toString().toLowerCase()} with custom styling.",
+                  service['description'] ?? l10n.professionalService(service['name']),
                   style: TextStyle(fontSize: 12, color: Colors.grey[600]),
                   maxLines: 1, overflow: TextOverflow.ellipsis,
                 ),
@@ -437,7 +446,7 @@ class _ShopPreviewScreenState extends ConsumerState<ShopPreviewScreen> {
                   children: [
                     Icon(LucideIcons.clock, size: 12, color: Colors.grey[400]),
                     const SizedBox(width: 4),
-                    Text("${service['duration']} mins", style: TextStyle(color: Colors.grey[500], fontSize: 11)),
+                    Text("${service['duration']} ${l10n.mins}", style: TextStyle(color: Colors.grey[500], fontSize: 11)),
                   ],
                 ),
               ],
@@ -474,9 +483,9 @@ class _ShopPreviewScreenState extends ConsumerState<ShopPreviewScreen> {
                 shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
                 elevation: 0,
               ),
-              child: const Text(
-                "BOOK APPOINTMENT",
-                style: TextStyle(color: Colors.white, fontWeight: FontWeight.w900, fontSize: 15, letterSpacing: 1),
+              child: Text(
+                l10n.bookAppointment,
+                style: const TextStyle(color: Colors.white, fontWeight: FontWeight.w900, fontSize: 15, letterSpacing: 1),
               ),
             ),
           ),

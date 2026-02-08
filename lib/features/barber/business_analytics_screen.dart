@@ -7,6 +7,8 @@ import 'package:barber_sync/core/theme/app_theme.dart';
 import 'package:barber_sync/core/providers/theme_provider.dart';
 import 'package:barber_sync/services/api_service.dart';
 import 'package:barber_sync/core/providers/user_provider.dart';
+import 'package:barber_sync/l10n/app_localizations.dart';
+import 'package:intl/intl.dart';
 
 class BusinessAnalyticsScreen extends ConsumerStatefulWidget {
   final Map<String, dynamic> shopData;
@@ -21,6 +23,13 @@ class _BusinessAnalyticsScreenState extends ConsumerState<BusinessAnalyticsScree
   Map<String, dynamic>? _analytics;
   bool _isLoading = true;
   String _period = 'daily';
+  late AppLocalizations l10n;
+
+  @override
+  void didChangeDependencies() {
+    super.didChangeDependencies();
+    l10n = AppLocalizations.of(context)!;
+  }
 
   @override
   void initState() {
@@ -103,9 +112,9 @@ class _BusinessAnalyticsScreenState extends ConsumerState<BusinessAnalyticsScree
             ),
           ),
           const SizedBox(width: 20),
-          const Text(
-            "Business Analytics",
-            style: TextStyle(fontSize: 24, fontWeight: FontWeight.w900),
+          Text(
+            l10n.businessAnalytics,
+            style: const TextStyle(fontSize: 24, fontWeight: FontWeight.w900),
           ),
         ],
       ),
@@ -134,7 +143,7 @@ class _BusinessAnalyticsScreenState extends ConsumerState<BusinessAnalyticsScree
               ),
               child: Center(
                 child: Text(
-                  p.toUpperCase(),
+                  _getLocalizedPeriodLabel(p, l10n).toUpperCase(),
                   style: TextStyle(
                     fontSize: 10,
                     fontWeight: FontWeight.bold,
@@ -156,15 +165,24 @@ class _BusinessAnalyticsScreenState extends ConsumerState<BusinessAnalyticsScree
       children: [
         Row(
           children: [
-            Expanded(child: _buildStatCard(isDark, "Appointments", _analytics!['totalAppointments'].toString(), Colors.blue)),
+            Expanded(child: _buildStatCard(isDark, l10n.appointments, _analytics!['totalAppointments'].toString(), Colors.blue)),
             const SizedBox(width: 16),
-            Expanded(child: _buildStatCard(isDark, "Completed", _analytics!['completedCount'].toString(), AppTheme.emerald)),
+            Expanded(child: _buildStatCard(isDark, l10n.completed, _analytics!['completedCount'].toString(), AppTheme.emerald)),
           ],
         ),
         const SizedBox(height: 16),
-        _buildStatCard(isDark, "Total Revenue", "\$${_analytics!['totalRevenue']}", Colors.amber, isFullWidth: true),
+        _buildStatCard(isDark, l10n.totalRevenue, NumberFormat.simpleCurrency(locale: Localizations.localeOf(context).toString(), decimalDigits: 0).format(double.tryParse(_analytics!['totalRevenue'].toString()) ?? 0), Colors.amber, isFullWidth: true),
       ],
     );
+  }
+
+  String _getLocalizedPeriodLabel(String p, AppLocalizations l10n) {
+    switch (p.toLowerCase()) {
+      case 'daily': return l10n.daily;
+      case 'weekly': return l10n.weekly;
+      case 'monthly': return l10n.monthly;
+      default: return p;
+    }
   }
 
   Widget _buildStatCard(bool isDark, String label, String value, Color color, {bool isFullWidth = false}) {
@@ -195,7 +213,7 @@ class _BusinessAnalyticsScreenState extends ConsumerState<BusinessAnalyticsScree
     return Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-            const Text("Staff Performance", style: TextStyle(fontWeight: FontWeight.bold, fontSize: 18)),
+            Text(l10n.staffPerformance, style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 18)),
             const SizedBox(height: 16),
             ...staffStats.map((s) => Container(
                 margin: const EdgeInsets.only(bottom: 12),
@@ -208,7 +226,7 @@ class _BusinessAnalyticsScreenState extends ConsumerState<BusinessAnalyticsScree
                     mainAxisAlignment: MainAxisAlignment.spaceBetween,
                     children: [
                         Text(s['staffName'], style: const TextStyle(fontWeight: FontWeight.bold)),
-                        Text("\$${s['totalEarnings']}", style: const TextStyle(fontWeight: FontWeight.bold, color: AppTheme.emerald)),
+                        Text(NumberFormat.simpleCurrency(locale: Localizations.localeOf(context).toString(), decimalDigits: 0).format(double.tryParse(s['totalEarnings'].toString()) ?? 0), style: const TextStyle(fontWeight: FontWeight.bold, color: AppTheme.emerald)),
                     ],
                 )
             )).toList()

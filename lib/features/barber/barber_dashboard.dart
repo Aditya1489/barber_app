@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'dart:ui';
 import 'dart:io';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
@@ -8,13 +9,17 @@ import 'package:barber_sync/widgets/user_avatar.dart';
 import 'package:barber_sync/core/theme/app_theme.dart';
 import 'package:barber_sync/core/providers/user_provider.dart';
 import 'package:barber_sync/core/providers/theme_provider.dart';
+import 'package:barber_sync/core/providers/locale_provider.dart';
 import 'package:barber_sync/services/api_service.dart';
 import 'package:barber_sync/models/models.dart';
+import 'package:intl/intl.dart';
 
 import 'package:barber_sync/services/notification_service.dart';
+import 'package:barber_sync/services/fcm_service.dart';
 import 'package:intl/intl.dart';
 import 'package:fl_chart/fl_chart.dart';
 import 'package:flutter_animate/flutter_animate.dart';
+import 'package:barber_sync/l10n/app_localizations.dart';
 
 class BarberDashboardScreen extends ConsumerStatefulWidget {
   const BarberDashboardScreen({super.key});
@@ -39,6 +44,13 @@ class _BarberDashboardScreenState extends ConsumerState<BarberDashboardScreen> {
   int _earningsSummaryIndex = 0;
   String _earningsPeriod = 'Week';
   final PageController _earningsSummaryController = PageController();
+  late AppLocalizations l10n;
+
+  @override
+  void didChangeDependencies() {
+    super.didChangeDependencies();
+    l10n = AppLocalizations.of(context)!;
+  }
 
   @override
   void initState() {
@@ -47,8 +59,10 @@ class _BarberDashboardScreenState extends ConsumerState<BarberDashboardScreen> {
       _loadData();
       final user = ref.read(userProvider);
       if (user != null) {
-        ref.read(notificationServiceProvider).startPolling(user.id);
+        ref.read(fcmServiceProvider).initialize(user.id);
       }
+      // Note: Polling already started in login_screen.dart
+      // No need to start again here to avoid duplicate polling
     });
   }
   
@@ -81,7 +95,7 @@ class _BarberDashboardScreenState extends ConsumerState<BarberDashboardScreen> {
           _shopProfile = Map<String, dynamic>.from(shops.first as Map);
           final shopId = _shopProfile?['id'] as String?;
           if (shopId != null) {
-            _appointments = await apiService.getAppointments(shopId: shopId, limit: 500);
+            _appointments = await apiService.getAppointments(shopId: shopId, limit: 50);
           }
         }
       } else {
@@ -94,7 +108,7 @@ class _BarberDashboardScreenState extends ConsumerState<BarberDashboardScreen> {
           final staffId = _staffProfile!['id'];
           final results = await Future.wait([
             apiService.getStaffEarnings(user.id, period: 'Daily'),
-            apiService.getAppointments(staffId: staffId, limit: 500),
+            apiService.getAppointments(staffId: staffId, limit: 50),
           ]);
           _analytics = results[0] as Map<String, dynamic>?;
           _appointments = results[1] as List<Appointment>;
@@ -152,7 +166,7 @@ class _BarberDashboardScreenState extends ConsumerState<BarberDashboardScreen> {
     DateTime now = DateTime.now();
     for (int i = 6; i >= 0; i--) {
       DateTime day = now.subtract(Duration(days: i));
-      String dateStr = DateFormat('yyyy-MM-dd').format(day);
+      String dateStr = DateFormat.yMd(Localizations.localeOf(context).toString()).format(day);
       dailyData[dateStr] = 0.0;
     }
 
@@ -202,7 +216,7 @@ class _BarberDashboardScreenState extends ConsumerState<BarberDashboardScreen> {
         }
       }
     }
-    return {'Morning': morning, 'Afternoon': afternoon, 'Evening': evening};
+    return {l10n.morning: morning, l10n.afternoon: afternoon, l10n.evening: evening};
   }
 
   Map<String, dynamic> _getClientAnalytics() {
@@ -267,24 +281,24 @@ class _BarberDashboardScreenState extends ConsumerState<BarberDashboardScreen> {
     return {'staff': staffCut, 'owner': ownerCut, 'staffPercent': staffCommission * 100};
   }
 
-  String _getShiftHealth() {
+  String _getShiftHealth(AppLocalizations l10n) {
     final today = DateFormat('yyyy-MM-dd').format(DateTime.now());
     int todayCount = _appointments.where((a) => a.date == today).length;
-    if (todayCount > 8) return "Busy day 🔥";
-    if (todayCount > 4) return "Productive day ✅";
-    return "Light day ☁️";
+    if (todayCount > 8) return l10n.busyDay;
+    if (todayCount > 4) return l10n.productiveDay;
+    return l10n.lightDay;
   }
 
-  String _getPerformanceStreak() {
+  String _getPerformanceStreak(AppLocalizations l10n) {
     final user = ref.read(userProvider);
     if (user == null || user.role != AppRole.barber) {
-      return "Keep up the great work!";
+      return l10n.keepUpWork;
     }
 
     // Get staff ID
     final staffId = _staffProfile?['id'] as String?;
     if (staffId == null) {
-      return "Start your streak today!";
+      return l10n.startStreak;
     }
 
     // Get all completed appointments for this staff member
@@ -294,7 +308,7 @@ class _BarberDashboardScreenState extends ConsumerState<BarberDashboardScreen> {
     ).toList();
 
     if (completedAppointments.isEmpty) {
-      return "Start your streak today!";
+      return l10n.startStreak;
     }
 
     // Get unique dates with completed appointments, sorted descending
@@ -305,7 +319,7 @@ class _BarberDashboardScreenState extends ConsumerState<BarberDashboardScreen> {
       ..sort((a, b) => b.compareTo(a)); // Sort descending (newest first)
 
     if (completedDates.isEmpty) {
-      return "Start your streak today!";
+      return l10n.startStreak;
     }
 
     // Calculate consecutive days streak starting from today
@@ -354,20 +368,26 @@ class _BarberDashboardScreenState extends ConsumerState<BarberDashboardScreen> {
 
     // Return appropriate message based on streak
     if (streak == 0) {
-      return "Start your streak today!";
+      return l10n.startStreak;
     } else if (streak == 1) {
-      return "1 day streak! Keep it going! ⚡️";
+      return l10n.oneDayStreak;
     } else if (streak < 7) {
-      return "$streak day streak! 🔥";
+      return l10n.dayStreak(streak);
     } else if (streak < 30) {
-      return "$streak day streak! Amazing! 🔥🔥";
+      return l10n.dayStreakAmazing(streak);
     } else {
-      return "$streak day streak! You're unstoppable! 🔥🔥🔥";
+      return l10n.dayStreakUnstoppable(streak);
     }
   }
 
   @override
   Widget build(BuildContext context) {
+    // Listen to locale changes and force rebuild
+    ref.listen(localeProvider, (previous, next) {
+      if (mounted && previous != next) {
+        setState(() {});
+      }
+    });
     final isDark = ref.watch(themeProvider);
     final unreadCount = ref.watch(unreadNotificationCountProvider);
 
@@ -396,33 +416,65 @@ class _BarberDashboardScreenState extends ConsumerState<BarberDashboardScreen> {
     );
   }
 
-  Widget _buildScreenHeader(bool isDark, {required String title, String? subtitle, Widget? trailing}) {
+  Widget _buildScreenHeader(bool isDark, {required String title, String? subtitle, Widget? trailing, bool showAura = false, bool isOnline = true}) {
+    final auraColor = isOnline ? AppTheme.emerald : Colors.red;
+    
     return Padding(
       padding: const EdgeInsets.fromLTRB(16, 50, 16, 12),
       child: Row(
         mainAxisAlignment: MainAxisAlignment.spaceBetween,
         children: [
           Expanded(
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
+            child: Row(
               children: [
-                if (subtitle != null)
-                  Text(
-                    subtitle.toUpperCase(),
-                    style: TextStyle(
-                      fontSize: 10,
-                      fontWeight: FontWeight.bold,
-                      color: (isDark ? Colors.white : Colors.black).withOpacity(0.4),
-                      letterSpacing: 2,
+                if (showAura)
+                  Container(
+                    margin: const EdgeInsets.only(right: 16),
+                    padding: const EdgeInsets.all(4),
+                    decoration: BoxDecoration(
+                      shape: BoxShape.circle,
+                      border: Border.all(color: auraColor.withOpacity(0.2), width: 2),
+                      boxShadow: [
+                        BoxShadow(
+                          color: auraColor.withOpacity(0.15),
+                          blurRadius: 15,
+                          spreadRadius: 5,
+                        )
+                      ],
+                    ),
+                    child: Container(
+                      width: 12,
+                      height: 12,
+                      decoration: BoxDecoration(
+                        color: auraColor,
+                        shape: BoxShape.circle,
+                      ),
                     ),
                   ),
-                const SizedBox(height: 4),
-                Text(
-                  title,
-                  style: TextStyle(
-                    fontSize: 28,
-                    fontWeight: FontWeight.w900,
-                    color: isDark ? Colors.white : Colors.black,
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      if (subtitle != null)
+                        Text(
+                          subtitle.toUpperCase(),
+                          style: TextStyle(
+                            fontSize: 10,
+                            fontWeight: FontWeight.bold,
+                            color: (isDark ? Colors.white : Colors.black).withOpacity(0.4),
+                            letterSpacing: 2,
+                          ),
+                        ),
+                      const SizedBox(height: 4),
+                      Text(
+                        title,
+                        style: TextStyle(
+                          fontSize: 28,
+                          fontWeight: FontWeight.w900,
+                          color: isDark ? Colors.white : Colors.black,
+                        ),
+                      ),
+                    ],
                   ),
                 ),
               ],
@@ -435,21 +487,23 @@ class _BarberDashboardScreenState extends ConsumerState<BarberDashboardScreen> {
   }
 
   Widget _buildBody(bool isDark, int unreadCount) {
+    final l10n = AppLocalizations.of(context)!;
+
     switch (_currentIndex) {
       case 0:
-        return _buildDashboardTab(isDark, unreadCount);
+        return _buildDashboardTab(isDark, unreadCount, l10n);
       case 1:
-        return _buildTasksTab(isDark);
+        return _buildTasksTab(isDark, l10n);
       case 2:
-        return _buildEarningsTab(isDark);
+        return _buildEarningsTab(isDark, l10n);
       case 3:
-        return _buildProfileTab(isDark);
+        return _buildProfileTab(isDark, l10n);
       default:
         return const SizedBox();
     }
   }
 
-  Widget _buildDashboardTab(bool isDark, int unreadCount) {
+  Widget _buildDashboardTab(bool isDark, int unreadCount, AppLocalizations l10n) {
     final user = ref.watch(userProvider);
     if (user == null) return const Center(child: CircularProgressIndicator());
     final isStaff = user.role == AppRole.barber;
@@ -459,7 +513,7 @@ class _BarberDashboardScreenState extends ConsumerState<BarberDashboardScreen> {
     final todayStr = DateFormat('yyyy-MM-dd').format(DateTime.now());
     final upcomingToday = _appointments.where((a) => 
       a.date == todayStr && 
-      a.status == AppointmentStatus.accepted
+      a.status == AppointmentStatus.confirmed
     ).toList();
     
     if (upcomingToday.isNotEmpty) {
@@ -477,13 +531,18 @@ class _BarberDashboardScreenState extends ConsumerState<BarberDashboardScreen> {
         _buildScreenHeader(
           isDark,
           title: user.name,
-          subtitle: _getShiftHealth(),
+          subtitle: _getShiftHealth(l10n),
           trailing: _buildHeaderNotificationItem(isDark, unreadCount),
+          showAura: isStaff,
+          isOnline: (_staffProfile != null) ? (_staffProfile!['isAvailable'] ?? true) : true,
         ),
         const SizedBox(height: 12),
         Expanded(
-          child: SingleChildScrollView(
-            physics: isStaff ? const ClampingScrollPhysics() : const AlwaysScrollableScrollPhysics(),
+          child: RefreshIndicator(
+            onRefresh: _loadData,
+            color: AppTheme.emerald,
+            child: SingleChildScrollView(
+              physics: const AlwaysScrollableScrollPhysics(),
             padding: const EdgeInsets.fromLTRB(16, 8, 16, 24),
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
@@ -525,20 +584,25 @@ class _BarberDashboardScreenState extends ConsumerState<BarberDashboardScreen> {
                 ],
                 _buildStatsGrid(isDark),
                 if (isStaff) ...[
-                   const SizedBox(height: 6),
-                   _buildPerformanceStreakCard(isDark),
+                  const SizedBox(height: 6),
+                  _buildPerformanceStreakCard(isDark),
                 ],
-                if (!isStaff) const SizedBox(height: 100),
-                const SizedBox(height: 100),
+                if (!isStaff) ...[
+                  const SizedBox(height: 24),
+                  _buildRecentRequests(isDark),
+                ],
+                const SizedBox(height: 120),
               ],
             ),
           ),
         ),
-      ],
-    );
-  }
+      ),
+    ],
+  );
+}
 
   Widget _buildPerformanceStreakCard(bool isDark) {
+    final l10n = AppLocalizations.of(context)!;
      return Container(
        padding: const EdgeInsets.all(20),
        decoration: BoxDecoration(
@@ -553,8 +617,8 @@ class _BarberDashboardScreenState extends ConsumerState<BarberDashboardScreen> {
              child: Column(
                crossAxisAlignment: CrossAxisAlignment.start,
                children: [
-                 const Text("YOU ARE ON FIRE!", style: TextStyle(color: Colors.white, fontWeight: FontWeight.w900, fontSize: 12, letterSpacing: 1.2)),
-                 Text(_getPerformanceStreak(), style: const TextStyle(color: Colors.white, fontSize: 14, fontWeight: FontWeight.bold)),
+                 Text(l10n.onFire, style: const TextStyle(color: Colors.white, fontWeight: FontWeight.w900, fontSize: 12, letterSpacing: 1.2)),
+                 Text(_getPerformanceStreak(l10n), style: const TextStyle(color: Colors.white, fontSize: 14, fontWeight: FontWeight.bold)),
                ],
              ),
            ),
@@ -639,30 +703,31 @@ class _BarberDashboardScreenState extends ConsumerState<BarberDashboardScreen> {
     double todayEarnings = 0.0,
     VoidCallback? onTap,
   }) {
-    String focusTitle = "Ready for work?";
-    String focusSubtitle = "Check your schedule to start";
+    final l10n = AppLocalizations.of(context)!;
+    String focusTitle = l10n.todayFocus;
+    String currentSubtitle = "Check your schedule to start";
     IconData focusIcon = LucideIcons.calendar;
     Color focusColor = Colors.blue;
 
     if (pending > 0) {
-      focusTitle = "$pending New Requests";
-      focusSubtitle = "Action required soon";
+      focusTitle = "$pending ${l10n.pendingRequests}";
+      currentSubtitle = "Action required soon";
       focusIcon = LucideIcons.bellRing;
       focusColor = Colors.amber;
     } else if (next != null) {
-      focusTitle = "Next: ${next.timeSlot}";
-      focusSubtitle = _getServiceNames(next.services);
+      focusTitle = "${l10n.nextClient}: ${next.timeSlot}";
+      currentSubtitle = next.services.isNotEmpty ? next.services.first : "";
       focusIcon = LucideIcons.clock;
       focusColor = AppTheme.emerald;
     } else if (allDone) {
-      focusTitle = "All Appointments Completed!";
-      focusSubtitle = "Great job today, take a rest";
+      focusTitle = l10n.allSystemsRunning;
+      currentSubtitle = l10n.noActionRequired;
       focusIcon = LucideIcons.partyPopper;
       focusColor = AppTheme.emerald;
     }
 
     // Calculate time until next appointment
-    String? nextApptTime;
+    String? nextApptTimeDescription;
     if (next != null) {
       try {
         final now = DateTime.now();
@@ -675,106 +740,96 @@ class _BarberDashboardScreenState extends ConsumerState<BarberDashboardScreen> {
             if (apptTime.isAfter(now)) {
               final difference = apptTime.difference(now);
               if (difference.inHours > 0) {
-                nextApptTime = "${difference.inHours}h ${difference.inMinutes % 60}m";
+                nextApptTimeDescription = "${difference.inHours}h ${difference.inMinutes % 60}m";
               } else {
-                nextApptTime = "${difference.inMinutes}m";
+                nextApptTimeDescription = "${difference.inMinutes}m";
               }
             }
           }
         }
       } catch (e) {
         // If parsing fails, just show the time slot
-        nextApptTime = next.timeSlot;
+        nextApptTimeDescription = next.timeSlot;
       }
     }
-
+    
     return InkWell(
       onTap: onTap,
       borderRadius: BorderRadius.circular(24),
-      child: Container(
-        padding: const EdgeInsets.all(20),
-        decoration: BoxDecoration(
-          color: focusColor.withOpacity(0.1),
-          borderRadius: BorderRadius.circular(24),
-          border: Border.all(color: focusColor.withOpacity(0.2)),
-        ),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            // Main info row
-            Row(
+      child: ClipRRect(
+        borderRadius: BorderRadius.circular(24),
+        child: BackdropFilter(
+          filter: ImageFilter.blur(sigmaX: 10, sigmaY: 10),
+          child: Container(
+            padding: const EdgeInsets.all(24),
+            decoration: BoxDecoration(
+              gradient: LinearGradient(colors: [focusColor.withOpacity(0.9), focusColor]),
+              borderRadius: BorderRadius.circular(24),
+              border: Border.all(color: Colors.white.withOpacity(0.2)),
+              boxShadow: [BoxShadow(color: focusColor.withOpacity(0.3), blurRadius: 20, offset: const Offset(0, 10))],
+            ),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                Container(
-                  padding: const EdgeInsets.all(12),
-                  decoration: BoxDecoration(color: focusColor.withOpacity(0.2), shape: BoxShape.circle),
-                  child: Icon(focusIcon, color: focusColor, size: 24),
-                ),
-                const SizedBox(width: 16),
-                Expanded(
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      Text(
-                        focusTitle, 
-                        style: TextStyle(
-                          fontSize: 16, 
-                          fontWeight: FontWeight.bold, 
-                          color: isDark ? Colors.white : Colors.black
-                        ),
+                Row(
+                  mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                  children: [
+                    Container(
+                      padding: const EdgeInsets.all(12),
+                      decoration: BoxDecoration(color: Colors.white.withOpacity(0.2), borderRadius: BorderRadius.circular(16)),
+                      child: Icon(focusIcon, color: Colors.white, size: 24),
+                    ),
+                    if (nextApptTimeDescription != null)
+                      Container(
+                        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+                        decoration: BoxDecoration(color: Colors.white.withOpacity(0.2), borderRadius: BorderRadius.circular(20)),
+                        child: Text("in $nextApptTimeDescription", style: const TextStyle(color: Colors.white, fontWeight: FontWeight.bold, fontSize: 12)),
                       ),
-                      const SizedBox(height: 4),
-                      Text(
-                        focusSubtitle, 
-                        style: TextStyle(
-                          fontSize: 12, 
-                          color: (isDark ? Colors.white : Colors.black).withOpacity(0.6)
-                        ),
+                  ],
+                ),
+                const SizedBox(height: 32),
+                Text(focusTitle, style: const TextStyle(color: Colors.white, fontSize: 24, fontWeight: FontWeight.w900)),
+                const SizedBox(height: 8),
+                Text(currentSubtitle, style: TextStyle(color: Colors.white.withOpacity(0.9), fontSize: 14, fontWeight: FontWeight.w500)),
+                
+                const SizedBox(height: 24),
+                // Stats row
+                Container(
+                  padding: const EdgeInsets.all(16),
+                  decoration: BoxDecoration(
+                    color: Colors.black.withOpacity(0.2),
+                    borderRadius: BorderRadius.circular(16),
+                  ),
+                  child: Row(
+                    mainAxisAlignment: MainAxisAlignment.spaceAround,
+                    children: [
+                      _buildStatItem(
+                        isDark,
+                        LucideIcons.calendar,
+                        todayAppointmentCount.toString(),
+                        l10n.today,
+                        Colors.blue,
+                      ),
+                      _buildStatItem(
+                        isDark,
+                        LucideIcons.dollarSign,
+                        NumberFormat.simpleCurrency(locale: Localizations.localeOf(context).toString(), decimalDigits: 0).format(todayEarnings),
+                        l10n.earnings,
+                        AppTheme.emerald,
+                      ),
+                      _buildStatItem(
+                        isDark,
+                        LucideIcons.clock,
+                        nextApptTimeDescription ?? "N/A",
+                        l10n.upcoming,
+                        Colors.orange,
                       ),
                     ],
                   ),
                 ),
-                Icon(LucideIcons.chevronRight, size: 20, color: (isDark ? Colors.white : Colors.black).withOpacity(0.3)),
               ],
             ),
-            // Stats row
-            const SizedBox(height: 18),
-            Container(
-              padding: const EdgeInsets.symmetric(vertical: 14, horizontal: 16),
-              decoration: BoxDecoration(
-                color: (isDark ? Colors.white : Colors.black).withOpacity(0.05),
-                borderRadius: BorderRadius.circular(12),
-              ),
-              child: Row(
-                mainAxisAlignment: MainAxisAlignment.spaceAround,
-                children: [
-                  // Today's appointments count
-                  _buildStatItem(
-                    isDark,
-                    LucideIcons.calendar,
-                    todayAppointmentCount.toString(),
-                    "Today",
-                    Colors.blue,
-                  ),
-                  // Today's earnings
-                  _buildStatItem(
-                    isDark,
-                    LucideIcons.dollarSign,
-                    "\$${todayEarnings.toStringAsFixed(0)}",
-                    "Earnings",
-                    AppTheme.emerald,
-                  ),
-                  // Next appointment time
-                  _buildStatItem(
-                    isDark,
-                    LucideIcons.clock,
-                    nextApptTime ?? "N/A",
-                    "Next",
-                    Colors.orange,
-                  ),
-                ],
-              ),
-            ),
-          ],
+          ),
         ),
       ),
     );
@@ -856,7 +911,9 @@ class _BarberDashboardScreenState extends ConsumerState<BarberDashboardScreen> {
     if (user == null) return const SizedBox.shrink();
     // Calculate stats locally from cached appointments for real-time accuracy
     int pendingCount = _appointments.where((a) => a.status == AppointmentStatus.pending).length;
-    int acceptedCount = _appointments.where((a) => a.status == AppointmentStatus.accepted).length;
+    int acceptedCount = _appointments.where((a) => 
+      a.status == AppointmentStatus.confirmed || 
+      a.status == AppointmentStatus.awaitingCustomerConfirmation).length;
     int completedCount = _appointments.where((a) => a.status == AppointmentStatus.completed).length;
     int missedCount = _appointments.where((a) => a.status == AppointmentStatus.noShow).length;
     
@@ -922,11 +979,11 @@ class _BarberDashboardScreenState extends ConsumerState<BarberDashboardScreen> {
           children: [
             Expanded(child: _buildStatCard(isDark, "Completed", completedCount.toString(), LucideIcons.checkCircle, AppTheme.emerald)),
             const SizedBox(width: 16),
-            Expanded(child: _buildStatCard(isDark, "Missed", missedCount.toString(), LucideIcons.userX, Colors.red)),
+            Expanded(child: _buildStatCard(isDark, l10n.missed, missedCount.toString(), LucideIcons.userX, Colors.red)),
           ],
         ),
         const SizedBox(height: 16),
-        _buildStatCard(isDark, "Total Earnings", "\$$earningsLabel", LucideIcons.dollarSign, Colors.amber),
+        _buildStatCard(isDark, l10n.totalEarnings, NumberFormat.simpleCurrency(locale: Localizations.localeOf(context).toString(), decimalDigits: 0).format(double.tryParse(earningsLabel) ?? 0), LucideIcons.dollarSign, Colors.amber),
       ],
     );
   }
@@ -1045,11 +1102,11 @@ class _BarberDashboardScreenState extends ConsumerState<BarberDashboardScreen> {
             Icon(LucideIcons.checkCircle2, size: 40, color: AppTheme.emerald.withOpacity(0.5)),
             const SizedBox(height: 12),
             Text(
-              "All caught up!",
+              l10n.allCaughtUp,
               style: TextStyle(fontWeight: FontWeight.bold, fontSize: 16, color: (isDark ? Colors.white : Colors.black).withOpacity(0.6)),
             ),
             Text(
-              "No new requests at the moment.",
+              l10n.noNewRequests,
               style: TextStyle(fontSize: 12, color: (isDark ? Colors.white : Colors.black).withOpacity(0.4)),
             ),
           ],
@@ -1065,7 +1122,7 @@ class _BarberDashboardScreenState extends ConsumerState<BarberDashboardScreen> {
           children: [
             Row(
               children: [
-                const Text("Pending Requests", style: TextStyle(fontSize: 20, fontWeight: FontWeight.w900, letterSpacing: -0.5)),
+                Text(l10n.pendingRequests, style: const TextStyle(fontSize: 20, fontWeight: FontWeight.w900, letterSpacing: -0.5)),
                 const SizedBox(width: 8),
                 Container(
                   padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
@@ -1088,13 +1145,13 @@ class _BarberDashboardScreenState extends ConsumerState<BarberDashboardScreen> {
                   onSelected: (value) {
                     setState(() => _sortBy = value);
                   },
-                  tooltip: "Sort Requests",
+                  tooltip: l10n.sortRequests,
                   icon: Icon(LucideIcons.listFilter, size: 20, color: AppTheme.darkAccent),
                   itemBuilder: (context) => [
-                    const PopupMenuItem(value: 'Recently Booked', child: Text("Recently Booked")),
-                    const PopupMenuItem(value: 'Appointment Date', child: Text("Appointment Date")),
-                    const PopupMenuItem(value: 'Highest Amount', child: Text("Highest Amount")),
-                    const PopupMenuItem(value: 'Longest Duration', child: Text("Longest Duration")),
+                    PopupMenuItem(value: 'Recently Booked', child: Text(l10n.recentlyBooked)),
+                    PopupMenuItem(value: 'Appointment Date', child: Text(l10n.appointmentDate)),
+                    PopupMenuItem(value: 'Highest Amount', child: Text(l10n.highestAmount)),
+                    PopupMenuItem(value: 'Longest Duration', child: Text(l10n.longestDuration)),
                   ],
                 ),
               ],
@@ -1107,14 +1164,14 @@ class _BarberDashboardScreenState extends ConsumerState<BarberDashboardScreen> {
             child: Row(
               children: [
                 Text(
-                  "${_selectedServiceFilters.length} services selected",
-                  style: TextStyle(fontSize: 12, color: AppTheme.darkAccent, fontWeight: FontWeight.bold),
+                  l10n.servicesSelected(_selectedServiceFilters.length),
+                  style: const TextStyle(fontWeight: FontWeight.bold),
                 ),
                 const SizedBox(width: 8),
                 GestureDetector(
                   onTap: () => setState(() => _selectedServiceFilters.clear()),
                   child: Text(
-                    "Clear",
+                    l10n.clear,
                     style: TextStyle(fontSize: 12, color: (isDark ? Colors.white : Colors.black).withOpacity(0.4), decoration: TextDecoration.underline),
                   ),
                 ),
@@ -1328,7 +1385,7 @@ class _BarberDashboardScreenState extends ConsumerState<BarberDashboardScreen> {
           return AlertDialog(
             shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
             backgroundColor: isDark ? AppTheme.darkCardBG : Colors.white,
-            title: const Text("Time Status", style: TextStyle(fontWeight: FontWeight.bold)),
+            title: Text(l10n.timeStatus, style: const TextStyle(fontWeight: FontWeight.bold)),
             content: Column(
               mainAxisSize: MainAxisSize.min,
               children: [
@@ -1357,13 +1414,17 @@ class _BarberDashboardScreenState extends ConsumerState<BarberDashboardScreen> {
   }
 
   Widget _buildRequestCard(bool isDark, Appointment appt) {
-    return Container(
-      decoration: BoxDecoration(
-        color: isDark ? AppTheme.darkCardBG : AppTheme.lightCardBG,
-        borderRadius: BorderRadius.circular(24),
-        boxShadow: !isDark ? [BoxShadow(color: Colors.black.withOpacity(0.03), blurRadius: 10, offset: const Offset(0, 4))] : null,
-      ),
-      child: Column(
+    return ClipRRect(
+      borderRadius: BorderRadius.circular(24),
+      child: BackdropFilter(
+        filter: ImageFilter.blur(sigmaX: 10, sigmaY: 10),
+        child: Container(
+          decoration: BoxDecoration(
+            color: isDark ? AppTheme.darkCardBG.withOpacity(0.4) : AppTheme.lightCardBG.withOpacity(0.8),
+            borderRadius: BorderRadius.circular(24),
+            border: isDark ? Border.all(color: Colors.white.withOpacity(0.05)) : Border.all(color: Colors.black.withOpacity(0.05)),
+          ),
+          child: Column(
         children: [
           Padding(
             padding: const EdgeInsets.fromLTRB(16, 16, 16, 12),
@@ -1372,7 +1433,7 @@ class _BarberDashboardScreenState extends ConsumerState<BarberDashboardScreen> {
                 UserAvatar(
                   radius: 26,
                   photoUrl: appt.customerPhoto,
-                  name: appt.customerName ?? "Customer",
+                  name: appt.customerName ?? l10n.customer,
                 ),
                 const SizedBox(width: 16),
                 Expanded(
@@ -1382,7 +1443,7 @@ class _BarberDashboardScreenState extends ConsumerState<BarberDashboardScreen> {
                       Row(
                         mainAxisAlignment: MainAxisAlignment.spaceBetween,
                         children: [
-                          Text(appt.customerName ?? "Customer", style: const TextStyle(fontSize: 16, fontWeight: FontWeight.w900)),
+                          Text(appt.customerName ?? l10n.customer, style: const TextStyle(fontSize: 16, fontWeight: FontWeight.w900)),
                           Text("\$${appt.totalAmount.toStringAsFixed(0)}", style: const TextStyle(fontWeight: FontWeight.w900, color: AppTheme.emerald, fontSize: 16)),
                         ],
                       ),
@@ -1432,7 +1493,7 @@ class _BarberDashboardScreenState extends ConsumerState<BarberDashboardScreen> {
                 Expanded(
                   child: InkWell(
                     onTap: () async {
-                       final success = await ref.read(apiServiceProvider).updateBookingStatus(appt.id, "ACCEPTED");
+                       final success = await ref.read(apiServiceProvider).updateBookingStatus(appt.id, "AWAITING_CUSTOMER_CONFIRMATION");
                        if (success) _loadData();
                     },
                     borderRadius: BorderRadius.circular(16),
@@ -1450,7 +1511,7 @@ class _BarberDashboardScreenState extends ConsumerState<BarberDashboardScreen> {
                 const SizedBox(width: 8),
                 InkWell(
                   onTap: () async {
-                     final success = await ref.read(apiServiceProvider).updateBookingStatus(appt.id, "CANCELLED");
+                      final success = await ref.read(apiServiceProvider).updateBookingStatus(appt.id, "CANCELLED_BY_BARBER");
                      if (success) _loadData();
                   },
                   borderRadius: BorderRadius.circular(16),
@@ -1468,8 +1529,10 @@ class _BarberDashboardScreenState extends ConsumerState<BarberDashboardScreen> {
           ),
         ],
       ),
-    );
-  }
+    ),
+  ),
+);
+}
 
   Widget _buildIconButton(IconData icon, Color color, VoidCallback onTap) {
     return InkWell(
@@ -1486,11 +1549,18 @@ class _BarberDashboardScreenState extends ConsumerState<BarberDashboardScreen> {
     );
   }
 
-  Widget _buildTasksTab(bool isDark) {
+  Widget _buildTasksTab(bool isDark, AppLocalizations l10n) {
     final pendingAppts = _appointments.where((a) => a.status == AppointmentStatus.pending).toList();
-    final upcomingAppts = _appointments.where((a) => a.status == AppointmentStatus.accepted).toList();
+    final upcomingAppts = _appointments.where((a) => 
+      a.status == AppointmentStatus.confirmed || 
+      a.status == AppointmentStatus.awaitingCustomerConfirmation).toList();
     final completedAppts = _appointments.where((a) => a.status == AppointmentStatus.completed).toList();
-    final noShowAppts = _appointments.where((a) => a.status == AppointmentStatus.noShow).toList();
+    final noShowAppts = _appointments.where((a) => 
+      a.status == AppointmentStatus.noShow || 
+      a.status == AppointmentStatus.expired ||
+      a.status == AppointmentStatus.cancelledByCustomer ||
+      a.status == AppointmentStatus.cancelledByBarber
+    ).toList();
     
     List<Appointment> currentList;
     if (_activeTaskTab == 'Requests') {
@@ -1533,8 +1603,8 @@ class _BarberDashboardScreenState extends ConsumerState<BarberDashboardScreen> {
       children: [
         _buildScreenHeader(
           isDark, 
-          title: "Appointments",
-          subtitle: "Manage your day",
+          title: l10n.appointments,
+          subtitle: l10n.manageYourDay,
           trailing: _activeTaskTab == 'Requests' ? Row(
             mainAxisSize: MainAxisSize.min,
             children: [
@@ -1544,13 +1614,13 @@ class _BarberDashboardScreenState extends ConsumerState<BarberDashboardScreen> {
                 onSelected: (value) {
                   setState(() => _sortBy = value);
                 },
-                tooltip: "Sort Requests",
-                icon: Icon(LucideIcons.listFilter, size: 20, color: AppTheme.darkAccent),
+                tooltip: l10n.sortRequests,
+                icon: Icon(LucideIcons.listFilter, size: 20, color: (isDark ? Colors.white : Colors.black).withOpacity(0.4)),
                 itemBuilder: (context) => [
-                  const PopupMenuItem(value: 'Recently Booked', child: Text("Recently Booked")),
-                  const PopupMenuItem(value: 'Appointment Date', child: Text("Appointment Date")),
-                  const PopupMenuItem(value: 'Highest Amount', child: Text("Highest Amount")),
-                  const PopupMenuItem(value: 'Longest Duration', child: Text("Longest Duration")),
+                  PopupMenuItem(value: 'Recently Booked', child: Text(l10n.recentlyBooked)),
+                  PopupMenuItem(value: 'Appointment Date', child: Text(l10n.appointmentDate)),
+                  PopupMenuItem(value: 'Highest Amount', child: Text(l10n.highestAmount)),
+                  PopupMenuItem(value: 'Longest Duration', child: Text(l10n.longestDuration)),
                 ],
               ),
             ],
@@ -1560,9 +1630,19 @@ class _BarberDashboardScreenState extends ConsumerState<BarberDashboardScreen> {
           padding: const EdgeInsets.symmetric(horizontal: 16.0),
           child: _buildTabSwitcher(
             isDark: isDark, 
-            items: ["Requests", "Upcoming", "Completed", "Missed"],
-            activeItem: _activeTaskTab, 
-            onTap: (val) => setState(() => _activeTaskTab = val),
+            items: [l10n.requests, l10n.upcoming, l10n.completed, l10n.missed],
+            activeItem: _activeTaskTab == 'Requests' ? l10n.requests :
+                       _activeTaskTab == 'Upcoming' ? l10n.upcoming :
+                       _activeTaskTab == 'Completed' ? l10n.completed :
+                       l10n.missed,
+            onTap: (val) {
+              setState(() {
+                if (val == l10n.requests) _activeTaskTab = 'Requests';
+                if (val == l10n.upcoming) _activeTaskTab = 'Upcoming';
+                if (val == l10n.completed) _activeTaskTab = 'Completed';
+                if (val == l10n.missed) _activeTaskTab = 'Missed';
+              });
+            },
           ),
         ),
         
@@ -1571,11 +1651,11 @@ class _BarberDashboardScreenState extends ConsumerState<BarberDashboardScreen> {
             padding: const EdgeInsets.fromLTRB(16, 12, 16, 0),
             child: Row(
               children: [
-                  Text("${_selectedServiceFilters.length} services selected", style: TextStyle(fontSize: 12, color: AppTheme.darkAccent, fontWeight: FontWeight.bold)),
+                  Text(l10n.servicesSelected(_selectedServiceFilters.length), style: TextStyle(fontSize: 12, color: AppTheme.darkAccent, fontWeight: FontWeight.bold)),
                   const SizedBox(width: 8),
                   GestureDetector(
                     onTap: () => setState(() => _selectedServiceFilters.clear()),
-                    child: Text("Clear", style: TextStyle(fontSize: 12, color: (isDark ? Colors.white : Colors.black).withOpacity(0.4), decoration: TextDecoration.underline)),
+                    child: Text(l10n.clear, style: TextStyle(fontSize: 12, color: (isDark ? Colors.white : Colors.black).withOpacity(0.4), decoration: TextDecoration.underline)),
                   ),
               ],
             ),
@@ -1583,46 +1663,55 @@ class _BarberDashboardScreenState extends ConsumerState<BarberDashboardScreen> {
 
         const SizedBox(height: 24),
         Expanded(
-          child: Padding(
-            padding: const EdgeInsets.symmetric(horizontal: 16.0),
-            child: currentList.isEmpty 
-              ? Center(
-                  child: Column(
-                    mainAxisAlignment: MainAxisAlignment.center,
-                    children: [
-                      Icon(
-                        _activeTaskTab == 'Requests' ? LucideIcons.bellPlus : 
-                        _activeTaskTab == 'Upcoming' ? LucideIcons.calendar :
-                        LucideIcons.hardDrive, 
-                        size: 64, 
-                        color: (isDark ? Colors.white : Colors.black).withOpacity(0.1)
+          child: RefreshIndicator(
+            onRefresh: _loadData,
+            color: AppTheme.emerald,
+            child: Padding(
+              padding: const EdgeInsets.symmetric(horizontal: 16.0),
+              child: currentList.isEmpty 
+                ? SingleChildScrollView(
+                    physics: const AlwaysScrollableScrollPhysics(),
+                    child: Container(
+                      height: MediaQuery.of(context).size.height * 0.6,
+                      alignment: Alignment.center,
+                      child: Column(
+                        mainAxisAlignment: MainAxisAlignment.center,
+                        children: [
+                          Icon(
+                            _activeTaskTab == 'Requests' ? LucideIcons.bellPlus : 
+                            _activeTaskTab == 'Upcoming' ? LucideIcons.calendar :
+                            LucideIcons.hardDrive, 
+                            size: 64, 
+                            color: (isDark ? Colors.white : Colors.black).withOpacity(0.1)
+                          ),
+                          const SizedBox(height: 16),
+                          Text(_activeTaskTab == 'Requests' ? l10n.noNewRequests : l10n.noAppointments, style: TextStyle(color: (isDark ? Colors.white : Colors.black).withOpacity(0.4))),
+                        ],
                       ),
-                      const SizedBox(height: 16),
-                      Text("No $_activeTaskTab appointments", style: TextStyle(color: (isDark ? Colors.white : Colors.black).withOpacity(0.4))),
-                    ],
+                    ),
                   )
-                )
-              : ListView.builder(
-                  padding: const EdgeInsets.only(bottom: 20),
-                  physics: const AlwaysScrollableScrollPhysics(),
-                  itemCount: currentList.length,
-                  itemBuilder: (context, index) {
-                    final appt = currentList[index];
-                    if (_activeTaskTab == 'Requests') {
-                      return Padding(
-                        padding: const EdgeInsets.only(bottom: 16),
-                        child: _buildRequestCard(isDark, appt),
-                      );
-                    }
-                    
-                    // Add swipe gestures for Appointments and Upcoming
-                    if (_activeTaskTab == 'Upcoming') {
-                      return _buildSwipeableTaskCard(isDark, appt, index);
-                    }
-                    
-                    return _buildTaskCard(isDark, appt, index);
-                  },
-                ),
+                : ListView.builder(
+                    padding: const EdgeInsets.only(bottom: 20),
+                    physics: const AlwaysScrollableScrollPhysics(),
+                    itemCount: currentList.length,
+                    itemBuilder: (context, index) {
+                      final appt = currentList[index];
+                      if (_activeTaskTab == 'Requests') {
+                        return Padding(
+                          padding: const EdgeInsets.only(bottom: 16),
+                          child: _buildRequestCard(isDark, appt),
+                        );
+                      }
+                      
+                      // Add swipe gestures for Appointments and Upcoming
+                      if (_activeTaskTab == 'Upcoming') {
+                        return _buildSwipeableTaskCard(isDark, appt, index);
+                      }
+                      
+                      return _buildTaskCard(isDark, appt, index);
+                    },
+                  ),
+            ),
           ),
         ),
       ],
@@ -1660,6 +1749,7 @@ class _BarberDashboardScreenState extends ConsumerState<BarberDashboardScreen> {
   }
 
   Widget _buildTaskCard(bool isDark, Appointment appt, int index) {
+    final l10n = AppLocalizations.of(context)!;
     final today = DateFormat('yyyy-MM-dd').format(DateTime.now());
     bool isToday = appt.date == today;
     bool isCurrent = isToday && index == 0 && _activeTaskTab == 'Upcoming';
@@ -1698,10 +1788,14 @@ class _BarberDashboardScreenState extends ConsumerState<BarberDashboardScreen> {
                   borderRadius: BorderRadius.circular(6),
                 ),
                 child: Text(
-                  _activeTaskTab == 'Completed' ? "COMPLETED" : 
-                  _activeTaskTab == 'Missed' ? "NO SHOW" :
-                  isCurrent ? "CURRENT" : "UPCOMING",
-                  style: TextStyle(fontSize: 9, fontWeight: FontWeight.bold, color: _activeTaskTab == 'Missed' ? Colors.red : (isCurrent ? Colors.amber : Colors.blue)),
+                  _activeTaskTab == 'Completed' ? l10n.completedStatus : 
+                  _activeTaskTab == 'Missed' ? l10n.noShowStatus :
+                  appt.status == AppointmentStatus.awaitingCustomerConfirmation ? l10n.pendingPaymentStatus :
+                  isCurrent ? l10n.currentStatus : l10n.upcomingStatus,
+                  style: TextStyle(
+                    fontSize: 9, 
+                    fontWeight: FontWeight.bold, 
+                    color: _activeTaskTab == 'Missed' ? Colors.red : (appt.status == AppointmentStatus.awaitingCustomerConfirmation ? Colors.orange : (isCurrent ? Colors.amber : Colors.blue))),
                 ),
               ),
             ],
@@ -1709,13 +1803,13 @@ class _BarberDashboardScreenState extends ConsumerState<BarberDashboardScreen> {
           const SizedBox(height: 20),
           Row(
             children: [
-              UserAvatar(radius: 28, photoUrl: appt.customerPhoto, name: appt.customerName ?? "Customer"),
+              UserAvatar(radius: 28, photoUrl: appt.customerPhoto, name: appt.customerName ?? l10n.customer),
               const SizedBox(width: 16),
               Expanded(
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
-                    Text(appt.customerName ?? "Customer", style: const TextStyle(fontSize: 18, fontWeight: FontWeight.bold)),
+                    Text(appt.customerName ?? l10n.customer, style: const TextStyle(fontSize: 18, fontWeight: FontWeight.bold)),
                     const SizedBox(height: 4),
                     Row(
                       children: [
@@ -1750,11 +1844,11 @@ class _BarberDashboardScreenState extends ConsumerState<BarberDashboardScreen> {
                child: Column(
                  crossAxisAlignment: CrossAxisAlignment.start,
                  children: [
-                   const Row(
+                   Row(
                      children: [
-                       Icon(LucideIcons.stickyNote, size: 12, color: Colors.amber),
-                       SizedBox(width: 4),
-                       Text("PRIVATE NOTE", style: TextStyle(fontSize: 9, fontWeight: FontWeight.w900, color: Colors.amber, letterSpacing: 0.5)),
+                       const Icon(LucideIcons.stickyNote, size: 12, color: Colors.amber),
+                       const SizedBox(width: 4),
+                       Text(l10n.privateNote.toUpperCase(), style: const TextStyle(fontSize: 9, fontWeight: FontWeight.w900, color: Colors.amber, letterSpacing: 0.5)),
                      ],
                    ),
                    const SizedBox(height: 4),
@@ -1771,7 +1865,7 @@ class _BarberDashboardScreenState extends ConsumerState<BarberDashboardScreen> {
                   child: OutlinedButton.icon(
                     onPressed: () => _showAddNoteDialog(appt),
                     icon: const Icon(LucideIcons.plus, size: 14),
-                    label: const Text("ADD NOTE", style: TextStyle(fontSize: 10, fontWeight: FontWeight.bold)),
+                    label: Text(l10n.addNoteBtn, style: const TextStyle(fontSize: 10, fontWeight: FontWeight.bold)),
                     style: OutlinedButton.styleFrom(
                       padding: const EdgeInsets.symmetric(vertical: 12),
                       shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
@@ -1785,7 +1879,7 @@ class _BarberDashboardScreenState extends ConsumerState<BarberDashboardScreen> {
                   child: OutlinedButton.icon(
                     onPressed: () {},
                     icon: const Icon(LucideIcons.flag, size: 14),
-                    label: const Text("REPORT ISSUE", style: TextStyle(fontSize: 10, fontWeight: FontWeight.bold)),
+                    label: Text(l10n.reportIssue, style: const TextStyle(fontSize: 10, fontWeight: FontWeight.bold)),
                     style: OutlinedButton.styleFrom(
                       foregroundColor: Colors.red,
                       padding: const EdgeInsets.symmetric(vertical: 12),
@@ -1806,7 +1900,7 @@ class _BarberDashboardScreenState extends ConsumerState<BarberDashboardScreen> {
                    const Icon(LucideIcons.alertTriangle, color: Colors.red, size: 16),
                    const SizedBox(width: 12),
                    Expanded(
-                     child: Text("Lost Potential: \$${appt.totalAmount.toStringAsFixed(0)} · Affects your visibility rating", style: const TextStyle(fontSize: 11, color: Colors.red, fontWeight: FontWeight.bold)),
+                     child: Text(l10n.lostPotential(appt.totalAmount.toStringAsFixed(0)), style: const TextStyle(fontSize: 11, color: Colors.red, fontWeight: FontWeight.bold)),
                    ),
                  ],
                ),
@@ -1818,31 +1912,47 @@ class _BarberDashboardScreenState extends ConsumerState<BarberDashboardScreen> {
   }
 
   Widget _loyaltyBadge(String status) {
+    // Note: status from DB might still be English ("Returning", "First-time")
+    // We map it to localized string for display
+    final l10n = AppLocalizations.of(context)!;
+    
     Color color = Colors.grey;
-    if (status == "Loyal") color = AppTheme.emerald;
-    if (status == "Returning") color = Colors.blue;
-    if (status == "First-time") color = Colors.amber;
+    String label = status;
+
+    if (status == "Loyal") {
+      color = AppTheme.emerald;
+      label = l10n.loyal;
+    }
+    if (status == "Returning") {
+      color = Colors.blue;
+      label = l10n.returning;
+    }
+    if (status == "First-time") {
+      color = Colors.amber;
+      label = l10n.firstTime;
+    }
 
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
       decoration: BoxDecoration(color: color.withOpacity(0.1), borderRadius: BorderRadius.circular(20)),
-      child: Text(status.toUpperCase(), style: TextStyle(color: color, fontSize: 8, fontWeight: FontWeight.w900, letterSpacing: 0.5)),
+      child: Text(label.toUpperCase(), style: TextStyle(color: color, fontSize: 8, fontWeight: FontWeight.w900, letterSpacing: 0.5)),
     );
   }
 
   void _showAddNoteDialog(Appointment appt) {
+     final l10n = AppLocalizations.of(context)!;
      final controller = TextEditingController(text: appt.privateNotes);
      showDialog(
        context: context,
        builder: (context) => AlertDialog(
-         title: const Text("Add Session Note"),
+         title: Text(l10n.addSessionNote),
          content: TextField(
            controller: controller,
            maxLines: 3,
-           decoration: const InputDecoration(hintText: "e.g. Likes skin fade, has sensitive skin..."),
+           decoration: InputDecoration(hintText: l10n.noteHint),
          ),
          actions: [
-           TextButton(onPressed: () => Navigator.pop(context), child: const Text("Cancel")),
+           TextButton(onPressed: () => Navigator.pop(context), child: Text(l10n.cancel)),
            TextButton(onPressed: () {
              // Mock update locally
              setState(() {
@@ -1860,13 +1970,13 @@ class _BarberDashboardScreenState extends ConsumerState<BarberDashboardScreen> {
                }
              });
              Navigator.pop(context);
-           }, child: const Text("Save")),
+           }, child: Text(l10n.save)),
          ],
        ),
      );
   }
 
-  Widget _buildEarningsTab(bool isDark) {
+  Widget _buildEarningsTab(bool isDark, AppLocalizations l10n) {
     final completed = _appointments.where((a) => a.status == AppointmentStatus.completed).toList();
     final totalEarnings = completed.fold(0.0, (sum, a) => sum + a.totalAmount);
     final avgPerAppt = completed.isEmpty ? 0.0 : (totalEarnings / completed.length);
@@ -1878,8 +1988,8 @@ class _BarberDashboardScreenState extends ConsumerState<BarberDashboardScreen> {
       children: [
         _buildScreenHeader(
           isDark, 
-          title: "Earnings Insights", 
-          subtitle: "Performance Analytics",
+          title: l10n.earnings, 
+          subtitle: l10n.performanceAnalytics,
           trailing: InkWell(
             onTap: () => _showEarningsActions(context, isDark),
             child: Container(
@@ -1893,74 +2003,78 @@ class _BarberDashboardScreenState extends ConsumerState<BarberDashboardScreen> {
           ),
         ),
         Expanded(
-          child: SingleChildScrollView(
-            physics: const ClampingScrollPhysics(),
+          child: RefreshIndicator(
+            onRefresh: _loadData,
+            color: AppTheme.emerald,
+            child: SingleChildScrollView(
+              physics: const AlwaysScrollableScrollPhysics(),
             padding: const EdgeInsets.only(bottom: 20, left: 16, right: 16),
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
                 // 1. Summary Carousel
-                _buildSummaryCarousel(isDark, totalEarnings, completed.length, avgPerAppt)
+                _buildSummaryCarousel(isDark, totalEarnings, completed.length, avgPerAppt, l10n)
                   .animate().fadeIn(duration: 400.ms).slideY(begin: 0.1, curve: Curves.easeOutQuad),
                 const SizedBox(height: 24),
                 
                 // 2. Period Selector
-                _buildPeriodChips(isDark)
+                _buildPeriodChips(isDark, l10n)
                   .animate().fadeIn(delay: 100.ms, duration: 400.ms).slideY(begin: 0.1, curve: Curves.easeOutQuad),
                 const SizedBox(height: 24),
                 
                 // 3. Line Chart
-                _buildPrimaryChart(isDark)
+                _buildPrimaryChart(isDark, l10n)
                   .animate().fadeIn(delay: 200.ms, duration: 400.ms).slideY(begin: 0.1, curve: Curves.easeOutQuad),
                 const SizedBox(height: 24),
                 
                 // 4. Service Breakdown
-                _buildServiceBreakdown(isDark)
+                _buildServiceBreakdown(isDark, l10n)
                   .animate().fadeIn(delay: 300.ms, duration: 400.ms).slideY(begin: 0.1, curve: Curves.easeOutQuad),
                 const SizedBox(height: 24),
                 
                 // 5 & 6. Combined Comparison & Productivity
                 Row(
                    children: [
-                     Expanded(child: _buildComparisonCard(isDark, comparison)),
+                     Expanded(child: _buildComparisonCard(isDark, comparison, l10n)),
                      const SizedBox(width: 16),
-                     Expanded(child: _buildGoalMiniCard(isDark, totalEarnings)),
+                     Expanded(child: _buildGoalMiniCard(isDark, totalEarnings, l10n)),
                    ],
                 ).animate().fadeIn(delay: 400.ms, duration: 400.ms).slideY(begin: 0.1, curve: Curves.easeOutQuad),
                 const SizedBox(height: 24),
                 
                 // 7. Productivity Heatmap
-                _buildProductivitySection(isDark)
+                _buildProductivitySection(isDark, l10n)
                   .animate().fadeIn(delay: 500.ms, duration: 400.ms).slideY(begin: 0.1, curve: Curves.easeOutQuad),
                 const SizedBox(height: 24),
                 
                 // 8. Performance Rings
-                _buildPerformanceRings(isDark)
+                _buildPerformanceRings(isDark, l10n)
                   .animate().fadeIn(delay: 600.ms, duration: 400.ms).slideY(begin: 0.1, curve: Curves.easeOutQuad),
                 const SizedBox(height: 24),
                 
                 // 9. Client Analytics
-                _buildClientStats(isDark, clientStats)
+                _buildClientStats(isDark, clientStats, l10n)
                   .animate().fadeIn(delay: 700.ms, duration: 400.ms).slideY(begin: 0.1, curve: Curves.easeOutQuad),
                 const SizedBox(height: 24),
                 
                 // 10. Expandable Calculation
-                _buildExpandableEarningsDetail(isDark, totalEarnings)
+                _buildExpandableEarningsDetail(isDark, totalEarnings, l10n)
                   .animate().fadeIn(delay: 800.ms, duration: 400.ms).slideY(begin: 0.1, curve: Curves.easeOutQuad),
                 const SizedBox(height: 20),
               ],
             ),
           ),
         ),
+      ),
       ],
     );
   }
 
-  Widget _buildSummaryCarousel(bool isDark, double total, int count, double avg) {
+  Widget _buildSummaryCarousel(bool isDark, double total, int count, double avg, AppLocalizations l10n) {
     final cards = [
-      _carouselItem(isDark, "Total Earnings", "\$${total.toStringAsFixed(2)}", LucideIcons.wallet, Colors.amber),
-      _carouselItem(isDark, "Appointments", count.toString(), LucideIcons.checkCircle2, AppTheme.emerald),
-      _carouselItem(isDark, "Avg / Session", "\$${avg.toStringAsFixed(2)}", LucideIcons.arrowUpRight, Colors.blue),
+      _carouselItem(isDark, l10n.totalEarnings, NumberFormat.simpleCurrency(locale: Localizations.localeOf(context).toString()).format(total), LucideIcons.wallet, Colors.amber),
+      _carouselItem(isDark, l10n.appointments, count.toString(), LucideIcons.checkCircle2, AppTheme.emerald),
+      _carouselItem(isDark, l10n.avgPerSession, NumberFormat.simpleCurrency(locale: Localizations.localeOf(context).toString()).format(avg), LucideIcons.arrowUpRight, Colors.blue),
     ];
 
     return Column(
@@ -2023,8 +2137,8 @@ class _BarberDashboardScreenState extends ConsumerState<BarberDashboardScreen> {
     );
   }
 
-  Widget _buildPeriodChips(bool isDark) {
-    final periods = ['Today', 'Week', 'Month', 'All Time'];
+  Widget _buildPeriodChips(bool isDark, AppLocalizations l10n) {
+    final periods = [l10n.today, l10n.week, l10n.month, l10n.allTime];
     return SingleChildScrollView(
       scrollDirection: Axis.horizontal,
       child: Row(
@@ -2050,7 +2164,7 @@ class _BarberDashboardScreenState extends ConsumerState<BarberDashboardScreen> {
     );
   }
 
-  Widget _buildPrimaryChart(bool isDark) {
+  Widget _buildPrimaryChart(bool isDark, AppLocalizations l10n) {
     final data = _getLineChartData();
     final spots = data.values.toList().asMap().entries.map((e) => FlSpot(e.key.toDouble(), e.value)).toList();
 
@@ -2065,7 +2179,7 @@ class _BarberDashboardScreenState extends ConsumerState<BarberDashboardScreen> {
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          const Text("Earnings Trend", style: TextStyle(fontWeight: FontWeight.bold, fontSize: 16)),
+          Text(l10n.earningsTrend, style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 16)),
           const SizedBox(height: 24),
           Expanded(
             child: LineChart(
@@ -2094,7 +2208,7 @@ class _BarberDashboardScreenState extends ConsumerState<BarberDashboardScreen> {
     );
   }
 
-  Widget _buildServiceBreakdown(bool isDark) {
+  Widget _buildServiceBreakdown(bool isDark, AppLocalizations l10n) {
     final ranked = _getServiceRankedList();
     if (ranked.isEmpty) return const SizedBox.shrink();
 
@@ -2107,7 +2221,7 @@ class _BarberDashboardScreenState extends ConsumerState<BarberDashboardScreen> {
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          const Text("Service Breakdown", style: TextStyle(fontWeight: FontWeight.bold, fontSize: 16)),
+          Text(l10n.serviceBreakdown, style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 16)),
           const SizedBox(height: 24),
           Row(
             children: [
@@ -2136,7 +2250,7 @@ class _BarberDashboardScreenState extends ConsumerState<BarberDashboardScreen> {
                       mainAxisAlignment: MainAxisAlignment.spaceBetween,
                       children: [
                         Text(s['name'], style: TextStyle(fontSize: 12, color: (isDark ? Colors.white : Colors.black).withOpacity(0.6))),
-                        Text("\$${(s['revenue'] as double).toStringAsFixed(0)}", style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 12)),
+                        Text(NumberFormat.simpleCurrency(locale: Localizations.localeOf(context).toString(), decimalDigits: 0).format(s['revenue'] as double), style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 12)),
                       ],
                     ),
                   )).toList(),
@@ -2149,7 +2263,7 @@ class _BarberDashboardScreenState extends ConsumerState<BarberDashboardScreen> {
     );
   }
 
-  Widget _buildPerformanceRings(bool isDark) {
+  Widget _buildPerformanceRings(bool isDark, AppLocalizations l10n) {
     final completed = _appointments.where((a) => a.status == AppointmentStatus.completed).length;
     final noShow = _appointments.where((a) => a.status == AppointmentStatus.noShow).length;
     final total = completed + noShow;
@@ -2158,9 +2272,9 @@ class _BarberDashboardScreenState extends ConsumerState<BarberDashboardScreen> {
 
     return Row(
       children: [
-        Expanded(child: _perfRing(isDark, "Completion", compRate, AppTheme.emerald)),
+        Expanded(child: _perfRing(isDark, l10n.completionRate, compRate, AppTheme.emerald)),
         const SizedBox(width: 16),
-        Expanded(child: _perfRing(isDark, "No-Show", noShowRate, Colors.red)),
+        Expanded(child: _perfRing(isDark, l10n.noShowRate, noShowRate, Colors.red)),
       ],
     );
   }
@@ -2196,7 +2310,7 @@ class _BarberDashboardScreenState extends ConsumerState<BarberDashboardScreen> {
     );
   }
 
-  Widget _buildProductivitySection(bool isDark) {
+  Widget _buildProductivitySection(bool isDark, AppLocalizations l10n) {
     final data = _getProductivityData();
     return Container(
       padding: const EdgeInsets.all(24),
@@ -2207,7 +2321,7 @@ class _BarberDashboardScreenState extends ConsumerState<BarberDashboardScreen> {
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          const Text("Productivity Heatmap", style: TextStyle(fontWeight: FontWeight.bold, fontSize: 16)),
+          Text(l10n.productivityHeatmap, style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 16)),
           const SizedBox(height: 20),
           ...data.entries.map((e) => Padding(
             padding: const EdgeInsets.only(bottom: 12),
@@ -2238,7 +2352,7 @@ class _BarberDashboardScreenState extends ConsumerState<BarberDashboardScreen> {
     );
   }
 
-  Widget _buildClientStats(bool isDark, Map<String, dynamic> stats) {
+  Widget _buildClientStats(bool isDark, Map<String, dynamic> stats, AppLocalizations l10n) {
     return Container(
       padding: const EdgeInsets.all(24),
       decoration: BoxDecoration(
@@ -2248,9 +2362,9 @@ class _BarberDashboardScreenState extends ConsumerState<BarberDashboardScreen> {
       child: Row(
         mainAxisAlignment: MainAxisAlignment.spaceAround,
         children: [
-          _clientMiniStat("Unique", stats['unique'].toString()),
-          _clientMiniStat("Repeat", "${(stats['repeatRate'] * 100).toStringAsFixed(0)}%"),
-          _clientMiniStat("New", stats['new'].toString()),
+          _clientMiniStat(l10n.uniqueClients, stats['unique'].toString()),
+          _clientMiniStat(l10n.repeatClients, "${(stats['repeatRate'] * 100).toStringAsFixed(0)}%"),
+          _clientMiniStat(l10n.newClients, stats['new'].toString()),
         ],
       ),
     );
@@ -2265,7 +2379,7 @@ class _BarberDashboardScreenState extends ConsumerState<BarberDashboardScreen> {
     );
   }
 
-  Widget _buildComparisonCard(bool isDark, Map<String, dynamic> stats) {
+  Widget _buildComparisonCard(bool isDark, Map<String, dynamic> stats, AppLocalizations l10n) {
     return Container(
       padding: const EdgeInsets.all(20),
       decoration: BoxDecoration(
@@ -2275,7 +2389,7 @@ class _BarberDashboardScreenState extends ConsumerState<BarberDashboardScreen> {
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          Text("vs Last Week", style: TextStyle(fontSize: 10, fontWeight: FontWeight.bold, color: (isDark ? Colors.white : Colors.black).withOpacity(0.4))),
+          Text(l10n.vsLastWeek, style: TextStyle(fontSize: 10, fontWeight: FontWeight.bold, color: (isDark ? Colors.white : Colors.black).withOpacity(0.4))),
           const SizedBox(height: 8),
           Row(
             crossAxisAlignment: CrossAxisAlignment.end,
@@ -2316,7 +2430,7 @@ class _BarberDashboardScreenState extends ConsumerState<BarberDashboardScreen> {
     );
   }
 
-  Widget _buildGoalMiniCard(bool isDark, double total) {
+  Widget _buildGoalMiniCard(bool isDark, double total, AppLocalizations l10n) {
     double goal = 2000;
     double progress = (total / goal).clamp(0.0, 1.0);
     return Container(
@@ -2328,7 +2442,7 @@ class _BarberDashboardScreenState extends ConsumerState<BarberDashboardScreen> {
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          const Text("Goal Progress", style: TextStyle(fontSize: 10, fontWeight: FontWeight.bold, color: Colors.grey)),
+          Text(l10n.goalProgress, style: const TextStyle(fontSize: 10, fontWeight: FontWeight.bold, color: Colors.grey)),
           const SizedBox(height: 10),
           LinearProgressIndicator(value: progress, backgroundColor: Colors.amber.withOpacity(0.1), color: Colors.amber, minHeight: 4),
         ],
@@ -2336,20 +2450,20 @@ class _BarberDashboardScreenState extends ConsumerState<BarberDashboardScreen> {
     );
   }
 
-  Widget _buildExpandableEarningsDetail(bool isDark, double total) {
+  Widget _buildExpandableEarningsDetail(bool isDark, double total, AppLocalizations l10n) {
     return ExpansionTile(
       tilePadding: const EdgeInsets.symmetric(horizontal: 24, vertical: 8),
-      title: const Text("Earnings Breakdown", style: TextStyle(fontWeight: FontWeight.bold)),
-      subtitle: Text("\$${total.toStringAsFixed(2)}", style: const TextStyle(color: AppTheme.emerald, fontWeight: FontWeight.bold)),
+      title: Text(l10n.earningsBreakdown, style: const TextStyle(fontWeight: FontWeight.bold)),
+      subtitle: Text(NumberFormat.simpleCurrency(locale: Localizations.localeOf(context).toString()).format(total), style: const TextStyle(color: AppTheme.emerald, fontWeight: FontWeight.bold)),
       children: [
         Padding(
           padding: const EdgeInsets.fromLTRB(24, 0, 24, 24),
           child: Column(
             children: [
-              _detailRow("Service Revenue", "\$${total.toStringAsFixed(2)}"),
-              _detailRow("Deductions", "\$0.00"),
+              _detailRow(l10n.serviceRevenue, NumberFormat.simpleCurrency(locale: Localizations.localeOf(context).toString()).format(total)),
+              _detailRow(l10n.deductions, "\$0.00"),
               const Divider(height: 32),
-              _detailRow("Net Payout", "\$${total.toStringAsFixed(2)}", isBold: true),
+              _detailRow(l10n.netPayout, NumberFormat.simpleCurrency(locale: Localizations.localeOf(context).toString()).format(total), isBold: true),
             ],
           ),
         ),
@@ -2371,6 +2485,7 @@ class _BarberDashboardScreenState extends ConsumerState<BarberDashboardScreen> {
   }
 
   void _showEarningsActions(BuildContext context, bool isDark) {
+    final l10n = AppLocalizations.of(context)!;
     showModalBottomSheet(
       context: context,
       backgroundColor: isDark ? AppTheme.darkBGMiddle : Colors.white,
@@ -2380,9 +2495,9 @@ class _BarberDashboardScreenState extends ConsumerState<BarberDashboardScreen> {
         child: Column(
           mainAxisSize: MainAxisSize.min,
           children: [
-            _actionItem(LucideIcons.history, "Full Earning History"),
-            _actionItem(LucideIcons.download, "Export Statement (PDF)"),
-            _actionItem(LucideIcons.helpCircle, "Help & Support"),
+            _actionItem(LucideIcons.history, l10n.fullHistory),
+            _actionItem(LucideIcons.download, l10n.exportPdf),
+            _actionItem(LucideIcons.helpCircle, l10n.helpSupport),
             const SizedBox(height: 20),
           ],
         ),
@@ -2398,68 +2513,69 @@ class _BarberDashboardScreenState extends ConsumerState<BarberDashboardScreen> {
     );
   }
 
-  Widget _buildProfileTab(bool isDark) {
+  Widget _buildProfileTab(bool isDark, AppLocalizations l10n) {
     final user = ref.watch(userProvider);
     if (user == null) return const Center(child: CircularProgressIndicator());
     final isStaff = user.role == AppRole.barber;
     
-    return RefreshIndicator(
-      onRefresh: _loadData,
-      color: AppTheme.emerald,
-      child: CustomScrollView(
-        physics: const AlwaysScrollableScrollPhysics(),
-        slivers: [
-          SliverToBoxAdapter(
-            child: _buildScreenHeader(
-              isDark,
-              title: user != null ? (user.role == AppRole.owner ? "Owner Profile" : "Barber Profile") : "Profile",
-              subtitle: "My Account",
-              trailing: InkWell(
-                onTap: () => ref.read(themeProvider.notifier).state = !isDark,
-                child: Container(
-                  padding: const EdgeInsets.all(12),
-                  decoration: BoxDecoration(color: isDark ? AppTheme.darkCardBG : AppTheme.lightCardBG, shape: BoxShape.circle),
-                  child: Icon(isDark ? LucideIcons.sun : LucideIcons.moon, size: 20),
-                ),
-              ),
+    return Column(
+      children: [
+        _buildScreenHeader(
+          isDark,
+          title: l10n.profile,
+          subtitle: l10n.myAccount,
+          trailing: InkWell(
+            onTap: () => ref.read(themeProvider.notifier).state = !isDark,
+            child: Container(
+              padding: const EdgeInsets.all(12),
+              decoration: BoxDecoration(color: isDark ? AppTheme.darkCardBG : AppTheme.lightCardBG, shape: BoxShape.circle),
+              child: Icon(isDark ? LucideIcons.sun : LucideIcons.moon, size: 20),
             ),
           ),
+        ),
+        Expanded(
+          child: RefreshIndicator(
+            onRefresh: _loadData,
+            color: AppTheme.emerald,
+            child: CustomScrollView(
+              physics: const AlwaysScrollableScrollPhysics(),
+              slivers: [
           SliverPadding(
             padding: const EdgeInsets.symmetric(horizontal: 16.0),
             sliver: SliverList(
               delegate: SliverChildListDelegate([
                 const SizedBox(height: 8),
-                _buildShopHeader(isDark),
+                _buildShopHeader(isDark, l10n),
                 const SizedBox(height: 24),
 
                 if (isStaff) ...[
-                  _buildProfileCompletionMeter(isDark),
+                  _buildProfileCompletionMeter(isDark, l10n),
                   const SizedBox(height: 24),
-                  _buildPerformanceSnapshot(isDark),
+                  _buildPerformanceSnapshot(isDark, l10n),
                   const SizedBox(height: 24),
-                  _buildSkillsSection(isDark),
+                  _buildSkillsSection(isDark, l10n),
                   const SizedBox(height: 24),
-                  _buildAvailabilityToggle(isDark),
+                  _buildAvailabilityToggle(isDark, l10n),
                   const SizedBox(height: 24),
                   
                   _buildProfileItem(
                     isDark, 
                     LucideIcons.user, 
-                    "Personal Profile", 
+                    l10n.personalProfile, 
                     Colors.blue,
                     onTap: () async {
                         if (_staffProfile != null) {
                           await context.push('/staff-profile-edit', extra: _staffProfile);
                           _loadData();
                         } else {
-                          ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text("Profile loading...")));
+                          ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(l10n.profileLoading)));
                         }
                     }
                   ),
                   _buildProfileItem(
                     isDark, 
                     LucideIcons.scissors, 
-                    "My Services", 
+                    l10n.myServices, 
                     AppTheme.emerald,
                     onTap: () async {
                        if (_staffProfile != null) {
@@ -2471,15 +2587,24 @@ class _BarberDashboardScreenState extends ConsumerState<BarberDashboardScreen> {
                   _buildProfileItem(
                     isDark, 
                     LucideIcons.store, 
-                    "Preview Shop Profile", 
+                    l10n.previewShopProfile, 
                     Colors.teal,
                     onTap: () {
                        if (_staffProfile != null && _staffProfile!['shop'] != null) {
                           context.push('/shop-preview', extra: _staffProfile!['shop']); 
                        } else {
-                         ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text("Shop data not available.")));
+                         ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(l10n.shopDataUnavailable)));
                        }
                     }
+                  ),
+                  const SizedBox(height: 16),
+                  _buildProfileItem(
+                    isDark,
+                    LucideIcons.languages,
+                    l10n.language,
+                    Colors.indigo,
+                    subtitle: _getCurrentLanguageName(ref.watch(localeProvider)),
+                    onTap: () => context.push('/language-selection'),
                   ),
                 ] else ...[
                   _buildShopPhotos(isDark),
@@ -2487,7 +2612,7 @@ class _BarberDashboardScreenState extends ConsumerState<BarberDashboardScreen> {
                   _buildProfileItem(
                     isDark, 
                     LucideIcons.store, 
-                    "Shop Settings", 
+                    l10n.shopSettings, 
                     Colors.blue,
                     onTap: () async {
                       if (_shopProfile != null) {
@@ -2499,7 +2624,7 @@ class _BarberDashboardScreenState extends ConsumerState<BarberDashboardScreen> {
                   _buildProfileItem(
                     isDark, 
                     LucideIcons.scissors, 
-                    "Manage Services", 
+                    l10n.manageServices, 
                     Colors.red,
                     onTap: () {
                        if (_shopProfile != null) context.push('/manage-services', extra: _shopProfile);
@@ -2508,7 +2633,7 @@ class _BarberDashboardScreenState extends ConsumerState<BarberDashboardScreen> {
                   _buildProfileItem(
                     isDark, 
                     LucideIcons.users, 
-                    "Staff Management", 
+                    l10n.staffManagement, 
                     AppTheme.emerald,
                     onTap: () {
                       if (_shopProfile != null) context.push('/staff-management', extra: _shopProfile);
@@ -2517,12 +2642,67 @@ class _BarberDashboardScreenState extends ConsumerState<BarberDashboardScreen> {
                   _buildProfileItem(
                     isDark, 
                     LucideIcons.barChart3, 
-                    "Business Analytics", 
+                    l10n.businessAnalytics, 
                     Colors.deepPurple,
                     onTap: () {
                        if (_shopProfile != null) context.push('/business-analytics', extra: _shopProfile);
                     }
                   ),
+                  _buildProfileItem(
+                    isDark, 
+                    LucideIcons.fileText, 
+                    l10n.auditTrail, 
+                    Colors.orange,
+                    onTap: () => context.push('/audit-trail')
+                  ),
+                  _buildProfileItem(
+                    isDark, 
+                    LucideIcons.eye, 
+                    l10n.previewShopProfile, 
+                    Colors.teal,
+                    onTap: () {
+                       if (_shopProfile != null) {
+                          context.push('/shop-preview', extra: _shopProfile); 
+                       } else {
+                         ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(l10n.shopDataUnavailable)));
+                       }
+                    }
+                  ),
+                  const SizedBox(height: 16),
+                  _buildProfileItem(
+                    isDark,
+                    LucideIcons.languages,
+                    l10n.language,
+                    Colors.indigo,
+                    subtitle: _getCurrentLanguageName(ref.watch(localeProvider)),
+                    onTap: () => context.push('/language-selection'),
+                  ),
+                  _buildProfileItem(isDark, LucideIcons.fileText, l10n.privacyPolicy, Colors.grey, onTap: () {
+                    showAboutDialog(context: context, applicationName: 'BarberBook24', children: [Text(l10n.privacyPolicy + ' details...')]);
+                  }),
+                  _buildProfileItem(isDark, LucideIcons.scale, l10n.termsOfService, Colors.grey, onTap: () {
+                    showAboutDialog(context: context, applicationName: 'BarberBook24', children: [Text(l10n.termsOfService + ' details...')]);
+                  }),
+                  _buildProfileItem(isDark, LucideIcons.trash2, l10n.deleteAccount, Colors.red, onTap: () {
+                    showDialog(
+                      context: context,
+                      builder: (context) => AlertDialog(
+                        title: Text(l10n.deleteAccountConfirm),
+                        content: Text(l10n.deleteAccountWarning),
+                        actions: [
+                          TextButton(onPressed: () => Navigator.pop(context), child: Text(l10n.cancel)),
+                          TextButton(
+                            onPressed: () async {
+                              await ref.read(userProvider.notifier).logout();
+                              Navigator.pop(context);
+                              context.go('/login');
+                            },
+                            child: Text(l10n.delete, style: const TextStyle(color: Colors.red)),
+                          ),
+                        ],
+                      ),
+                    );
+                  }),
                 ],
                 
                 const SizedBox(height: 40),
@@ -2539,10 +2719,10 @@ class _BarberDashboardScreenState extends ConsumerState<BarberDashboardScreen> {
                     ),
                     child: Row(
                       mainAxisAlignment: MainAxisAlignment.center,
-                      children: const [
-                        Icon(LucideIcons.logOut, color: Colors.red, size: 20),
-                        SizedBox(width: 12),
-                        Text("LOGOUT SESSION", style: TextStyle(color: Colors.red, fontWeight: FontWeight.w900, letterSpacing: 1)),
+                      children: [
+                        const Icon(LucideIcons.logOut, color: Colors.red, size: 20),
+                        const SizedBox(width: 12),
+                        Text(l10n.logoutSession, style: const TextStyle(color: Colors.red, fontWeight: FontWeight.w900, letterSpacing: 1)),
                       ],
                     ),
                   ),
@@ -2553,10 +2733,13 @@ class _BarberDashboardScreenState extends ConsumerState<BarberDashboardScreen> {
           ),
         ],
       ),
-    );
-  }
+    ),
+  ),
+],
+);
+}
 
-  Widget _buildProfileCompletionMeter(bool isDark) {
+  Widget _buildProfileCompletionMeter(bool isDark, AppLocalizations l10n) {
     // Calculate profile completion dynamically
     int completedItems = 0;
     int totalItems = 5;
@@ -2577,7 +2760,7 @@ class _BarberDashboardScreenState extends ConsumerState<BarberDashboardScreen> {
       completedItems++;
       print('[PROFILE_STRENGTH] ✅ Has profile photo');
     } else {
-      missingItems.add("profile photo");
+      missingItems.add(l10n.profilePhoto);
       print('[PROFILE_STRENGTH] ❌ Missing profile photo');
     }
     
@@ -2586,7 +2769,7 @@ class _BarberDashboardScreenState extends ConsumerState<BarberDashboardScreen> {
       completedItems++;
       print('[PROFILE_STRENGTH] ✅ Has description');
     } else {
-      missingItems.add("bio");
+      missingItems.add(l10n.bio);
       print('[PROFILE_STRENGTH] ❌ Missing description');
     }
     
@@ -2595,7 +2778,7 @@ class _BarberDashboardScreenState extends ConsumerState<BarberDashboardScreen> {
       completedItems++;
       print('[PROFILE_STRENGTH] ✅ Has experience');
     } else {
-      missingItems.add("experience");
+      missingItems.add(l10n.experience);
       print('[PROFILE_STRENGTH] ❌ Missing experience');
     }
     
@@ -2605,7 +2788,7 @@ class _BarberDashboardScreenState extends ConsumerState<BarberDashboardScreen> {
       completedItems++;
       print('[PROFILE_STRENGTH] ✅ Has work photos: ${workPhotos.length}');
     } else {
-      missingItems.add("portfolio photos");
+      missingItems.add(l10n.portfolioPhotos);
       print('[PROFILE_STRENGTH] ❌ Missing work photos');
     }
     
@@ -2615,7 +2798,7 @@ class _BarberDashboardScreenState extends ConsumerState<BarberDashboardScreen> {
       completedItems++;
       print('[PROFILE_STRENGTH] ✅ Has skills: $skillsString');
     } else {
-      missingItems.add("skills");
+      missingItems.add(l10n.skills);
       print('[PROFILE_STRENGTH] ❌ Missing skills');
     }
     
@@ -2626,8 +2809,8 @@ class _BarberDashboardScreenState extends ConsumerState<BarberDashboardScreen> {
     
     // Generate helpful suggestion
     String suggestion = missingItems.isEmpty 
-        ? "Great job! Your profile is complete!" 
-        : "Add ${missingItems.take(2).join(' & ')} to increase your bookings!";
+        ? l10n.profileCompleteSug 
+        : l10n.profileIncompleteSug(missingItems.take(2).join(' & '));
     
     return Container(
       padding: const EdgeInsets.all(20),
@@ -2641,7 +2824,7 @@ class _BarberDashboardScreenState extends ConsumerState<BarberDashboardScreen> {
           Row(
             mainAxisAlignment: MainAxisAlignment.spaceBetween,
             children: [
-              const Text("Profile Completion", style: TextStyle(fontWeight: FontWeight.bold, fontSize: 13)),
+              Text(l10n.profileCompletion, style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 13)),
               Text("$completionPercent%", style: TextStyle(fontWeight: FontWeight.w900, color: AppTheme.emerald, fontSize: 13)),
             ],
           ),
@@ -2657,25 +2840,27 @@ class _BarberDashboardScreenState extends ConsumerState<BarberDashboardScreen> {
     ).animate().fadeIn();
   }
 
-  Widget _buildPerformanceSnapshot(bool isDark) {
+  Widget _buildPerformanceSnapshot(bool isDark, AppLocalizations l10n) {
     // Get rating from staff profile, default to 0.0 if not available
     final rating = _staffProfile?['rating']?.toDouble() ?? 0.0;
     final reviewsCount = _staffProfile?['reviewsCount'] ?? 0;
     
     // Calculate on-time rate from appointments
     final completedCount = _appointments.where((a) => a.status == AppointmentStatus.completed).length;
-    final missedCount = _appointments.where((a) => a.status == AppointmentStatus.cancelled).length;
+    final missedCount = _appointments.where((a) => 
+      a.status == AppointmentStatus.cancelledByCustomer || 
+      a.status == AppointmentStatus.cancelledByBarber).length;
     final totalHandled = completedCount + missedCount;
     final onTimePercent = totalHandled > 0 ? ((completedCount / totalHandled) * 100).round() : 100;
     
     return Row(
       children: [
-        _snapshotItem(isDark, rating.toStringAsFixed(1), "Avg Rating", LucideIcons.star, Colors.amber),
+        _snapshotItem(isDark, rating.toStringAsFixed(1), l10n.avgRating, LucideIcons.star, Colors.amber),
         const SizedBox(width: 12),
         _snapshotItemTappable(
           isDark, 
           reviewsCount.toString(), 
-          "Reviews", 
+          l10n.reviews, 
           LucideIcons.messageSquare, 
           Colors.blue,
           onTap: () {
@@ -2685,7 +2870,7 @@ class _BarberDashboardScreenState extends ConsumerState<BarberDashboardScreen> {
           },
         ),
         const SizedBox(width: 12),
-        _snapshotItem(isDark, "$onTimePercent%", "Completed", LucideIcons.checkCircle, AppTheme.emerald),
+        _snapshotItem(isDark, "$onTimePercent%", l10n.completed, LucideIcons.checkCircle, AppTheme.emerald),
       ],
     );
   }
@@ -2742,7 +2927,7 @@ class _BarberDashboardScreenState extends ConsumerState<BarberDashboardScreen> {
     ).animate().fadeIn();
   }
 
-  Widget _buildSkillsSection(bool isDark) {
+  Widget _buildSkillsSection(bool isDark, AppLocalizations l10n) {
     // Get skills from profile, split by comma
     final skillsString = _staffProfile?['skills']?.toString() ?? '';
     final skills = skillsString.isNotEmpty 
@@ -2759,11 +2944,11 @@ class _BarberDashboardScreenState extends ConsumerState<BarberDashboardScreen> {
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          const Text("Skills & Expertise", style: TextStyle(fontWeight: FontWeight.bold, fontSize: 13)),
+          Text(l10n.skillsExpertise, style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 13)),
           const SizedBox(height: 16),
           skills.isEmpty
               ? Text(
-                  "No skills added yet. Add skills in your profile to showcase your expertise!",
+                  l10n.noSkillsAdded,
                   style: TextStyle(
                     fontSize: 11,
                     color: (isDark ? Colors.white : Colors.black).withOpacity(0.4),
@@ -2783,7 +2968,7 @@ class _BarberDashboardScreenState extends ConsumerState<BarberDashboardScreen> {
     );
   }
 
-  Widget _buildAvailabilityToggle(bool isDark) {
+  Widget _buildAvailabilityToggle(bool isDark, AppLocalizations l10n) {
     return Container(
       padding: const EdgeInsets.all(20),
       decoration: BoxDecoration(
@@ -2798,34 +2983,58 @@ class _BarberDashboardScreenState extends ConsumerState<BarberDashboardScreen> {
             child: const Icon(LucideIcons.calendarCheck, color: AppTheme.emerald, size: 24),
           ),
           const SizedBox(width: 16),
-          const Expanded(
+          Expanded(
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                Text("Available for Today", style: TextStyle(fontWeight: FontWeight.bold, fontSize: 14)),
-                Text("Instantly accept new bookings", style: TextStyle(fontSize: 11, color: Colors.grey)),
+                Text(l10n.availableToday, style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 14)),
+                Text(l10n.instantlyAcceptBookings, style: const TextStyle(fontSize: 11, color: Colors.grey)),
               ],
             ),
           ),
-          Switch.adaptive(value: true, activeColor: AppTheme.emerald, onChanged: (v){}),
+          Switch.adaptive(
+            value: (_staffProfile != null) ? (_staffProfile!['isAvailable'] ?? true) : true, 
+            activeColor: AppTheme.emerald, 
+            onChanged: (v) async {
+              if (_staffProfile == null) return;
+              setState(() {
+                _staffProfile!['isAvailable'] = v;
+              });
+              try {
+                await ref.read(apiServiceProvider).updateStaffProfile(_staffProfile!['id'], {
+                  'isAvailable': v,
+                });
+                _loadData(); // Refresh to ensure everything is in sync
+              } catch (e) {
+                print("Error updating availability: $e");
+                // Rollback on error
+                setState(() {
+                  _staffProfile!['isAvailable'] = !v;
+                });
+                ScaffoldMessenger.of(context).showSnackBar(
+                  SnackBar(content: Text("${l10n.failedToUpdateAvailability}: $e"))
+                );
+              }
+            },
+          ),
         ],
       ),
     );
   }
 
 
-  Widget _buildShopHeader(bool isDark) {
+  Widget _buildShopHeader(bool isDark, AppLocalizations l10n) {
     final user = ref.watch(userProvider);
     if (user == null) return const SizedBox.shrink();
     
     // Determine Display Info based on Role
     String mainTitle = user.role == AppRole.owner 
-        ? (_shopProfile?['name'] ?? "My Shop") 
+        ? (_shopProfile?['name'] ?? l10n.myShop) 
         : (user.name); // Staff Name for Barbers
         
     String subTitle = user.role == AppRole.owner 
-        ? (_shopProfile?['address'] ?? "No Address Saved") 
-        : (_staffProfile?['shop']?['name'] ?? "No Shop Assigned"); // Shop Name for Barbers
+        ? (_shopProfile?['address'] ?? l10n.noAddressSaved) 
+        : (_staffProfile?['shop']?['name'] ?? l10n.noShopAssigned); // Shop Name for Barbers
 
     String? avatarPhotoUrl = user.profilePhoto;
     final shopPhotos = (_shopProfile?['photos'] as List?)?.cast<String>() ?? 
@@ -2881,9 +3090,9 @@ class _BarberDashboardScreenState extends ConsumerState<BarberDashboardScreen> {
             Row(
               mainAxisAlignment: MainAxisAlignment.center,
               children: [
-                _trustBadge(LucideIcons.checkCircle, "Verified by Shop", Colors.blue),
+                _trustBadge(LucideIcons.checkCircle, l10n.verifiedByShop, Colors.blue),
                 const SizedBox(width: 8),
-                _trustBadge(LucideIcons.award, "Top Rated", Colors.amber),
+                _trustBadge(LucideIcons.award, l10n.topRated, Colors.amber),
               ],
             ),
           ],
@@ -2907,7 +3116,7 @@ class _BarberDashboardScreenState extends ConsumerState<BarberDashboardScreen> {
     );
   }
 
-  Widget _buildProfileItem(bool isDark, IconData icon, String label, Color color, {VoidCallback? onTap}) {
+  Widget _buildProfileItem(bool isDark, IconData icon, String label, Color color, {String? subtitle, VoidCallback? onTap}) {
     return Container(
       margin: const EdgeInsets.only(bottom: 12),
       child: InkWell(
@@ -2923,7 +3132,24 @@ class _BarberDashboardScreenState extends ConsumerState<BarberDashboardScreen> {
             children: [
               Icon(icon, color: color, size: 24),
               const SizedBox(width: 20),
-              Expanded(child: Text(label, style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 16))),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(label, style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 16)),
+                    if (subtitle != null) ...[
+                      const SizedBox(height: 4),
+                      Text(
+                        subtitle,
+                        style: TextStyle(
+                          fontSize: 13,
+                          color: (isDark ? Colors.white : Colors.black).withOpacity(0.5),
+                        ),
+                      ),
+                    ],
+                  ],
+                ),
+              ),
               Icon(LucideIcons.chevronRight, size: 20, color: (isDark ? Colors.white : Colors.black).withOpacity(0.2)),
             ],
           ),
@@ -2932,7 +3158,23 @@ class _BarberDashboardScreenState extends ConsumerState<BarberDashboardScreen> {
     );
   }
 
+  String _getCurrentLanguageName(Locale locale) {
+    switch (locale.languageCode) {
+      case 'en':
+        return 'English';
+      case 'hi':
+        return 'हिंदी';
+      case 'es':
+        return 'Español';
+      case 'ar':
+        return 'العربية';
+      default:
+        return 'English';
+    }
+  }
+
   Widget _buildBottomNav(bool isDark) {
+    final l10n = AppLocalizations.of(context)!;
     return Container(
       decoration: BoxDecoration(
         color: (isDark ? Colors.black : Colors.white).withOpacity(0.95),
@@ -2945,10 +3187,10 @@ class _BarberDashboardScreenState extends ConsumerState<BarberDashboardScreen> {
           child: Row(
             mainAxisAlignment: MainAxisAlignment.spaceEvenly,
             children: [
-              _buildNavItem(isDark, 0, LucideIcons.layoutDashboard, "DASHBOARD"),
-              _buildNavItem(isDark, 1, LucideIcons.checkSquare, "APPOINTMENTS"),
-              _buildNavItem(isDark, 2, LucideIcons.wallet, "EARNINGS"),
-              _buildNavItem(isDark, 3, LucideIcons.store, "PROFILE"),
+              _buildNavItem(isDark, 0, LucideIcons.layoutDashboard, l10n.dashboard.toUpperCase()),
+              _buildNavItem(isDark, 1, LucideIcons.checkSquare, l10n.appointments.toUpperCase()),
+              _buildNavItem(isDark, 2, LucideIcons.wallet, l10n.earnings.toUpperCase()),
+              _buildNavItem(isDark, 3, LucideIcons.store, l10n.profile.toUpperCase()),
             ],
           ),
         ),
@@ -2978,6 +3220,7 @@ class _BarberDashboardScreenState extends ConsumerState<BarberDashboardScreen> {
     );
   }
   Widget _buildShopPhotos(bool isDark) {
+    final l10n = AppLocalizations.of(context)!;
     // ... existing implementation ...
      final shopPhotos = (_shopProfile?['photos'] as List?)?.cast<String>() ?? 
                        (_staffProfile?['shop']?['photos'] as List?)?.cast<String>() ?? [];
@@ -2989,7 +3232,7 @@ class _BarberDashboardScreenState extends ConsumerState<BarberDashboardScreen> {
       children: [
         Padding(
           padding: const EdgeInsets.symmetric(horizontal: 8),
-          child: Text("Shop Gallery", style: TextStyle(fontWeight: FontWeight.bold, fontSize: 16, color: isDark ? Colors.white : Colors.black)),
+          child: Text(l10n.shopGallery, style: TextStyle(fontWeight: FontWeight.bold, fontSize: 16, color: isDark ? Colors.white : Colors.black)),
         ),
         const SizedBox(height: 12),
         SizedBox(
@@ -3030,6 +3273,7 @@ class _BarberDashboardScreenState extends ConsumerState<BarberDashboardScreen> {
   }
 
   void _showPhotoDialog(BuildContext context, String photoPath, bool isDark) {
+    final l10n = AppLocalizations.of(context)!;
     showDialog(
       context: context,
       builder: (context) => Dialog(
@@ -3072,7 +3316,7 @@ class _BarberDashboardScreenState extends ConsumerState<BarberDashboardScreen> {
                            if (mounted) {
                                Navigator.pop(context);
                                ScaffoldMessenger.of(context).showSnackBar(
-                                   const SnackBar(content: Text("Profile photo updated!"))
+                                   SnackBar(content: Text(l10n.profilePhotoUpdated))
                                );
                            }
                        }
@@ -3081,11 +3325,11 @@ class _BarberDashboardScreenState extends ConsumerState<BarberDashboardScreen> {
                    }
                  },
                  icon: const Icon(LucideIcons.userCheck),
-                 label: const Text("Set as Profile Photo"),
+                 label: Text(l10n.setAsProfilePhoto),
                ),
              TextButton(
                onPressed: () => Navigator.pop(context),
-               child: const Text("Close", style: TextStyle(color: Colors.white, fontWeight: FontWeight.bold)),
+               child: Text(l10n.close, style: const TextStyle(color: Colors.white, fontWeight: FontWeight.bold)),
              )
           ],
         ),
@@ -3166,7 +3410,7 @@ class _NotificationsPopupContentState extends ConsumerState<_NotificationsPopupC
     }
   }
 
-  Future<void> _markAllRead() async {
+  Future<void> _markAllNotificationsRead() async {
     final unreadNotifications = _notifications.where((n) => !_isNotificationRead(n)).toList();
     if (unreadNotifications.isEmpty) return;
 
@@ -3199,6 +3443,7 @@ class _NotificationsPopupContentState extends ConsumerState<_NotificationsPopupC
 
   @override
   Widget build(BuildContext context) {
+    final l10n = AppLocalizations.of(context)!;
     return Column(
       children: [
         // Header
@@ -3207,9 +3452,9 @@ class _NotificationsPopupContentState extends ConsumerState<_NotificationsPopupC
           child: Row(
             mainAxisAlignment: MainAxisAlignment.spaceBetween,
             children: [
-              const Text(
-                "Notifications",
-                style: TextStyle(fontSize: 24, fontWeight: FontWeight.w900),
+              Text(
+                l10n.notifications,
+                style: const TextStyle(fontSize: 24, fontWeight: FontWeight.w900),
               ),
               Row(
                 mainAxisSize: MainAxisSize.min,
@@ -3223,18 +3468,8 @@ class _NotificationsPopupContentState extends ConsumerState<_NotificationsPopupC
                           return Padding(
                             padding: const EdgeInsets.only(right: 8),
                             child: TextButton(
-                              onPressed: _markAllRead,
-                              style: TextButton.styleFrom(
-                                padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
-                              ),
-                              child: const Text(
-                                "Read All",
-                                style: TextStyle(
-                                  fontSize: 14,
-                                  fontWeight: FontWeight.bold,
-                                  color: AppTheme.emerald,
-                                ),
-                              ),
+                              onPressed: () => _markAllNotificationsRead(), 
+                              child: Text(l10n.readAll, style: const TextStyle(color: AppTheme.emerald, fontWeight: FontWeight.bold))
                             ),
                           );
                         }

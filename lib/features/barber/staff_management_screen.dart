@@ -6,6 +6,7 @@ import 'package:barber_sync/widgets/gradient_background.dart';
 import 'package:barber_sync/core/theme/app_theme.dart';
 import 'package:barber_sync/core/providers/theme_provider.dart';
 import 'package:barber_sync/services/api_service.dart';
+import 'package:barber_sync/l10n/app_localizations.dart';
 
 class StaffManagementScreen extends ConsumerStatefulWidget {
   final Map<String, dynamic> shopData;
@@ -19,6 +20,13 @@ class StaffManagementScreen extends ConsumerStatefulWidget {
 class _StaffManagementScreenState extends ConsumerState<StaffManagementScreen> {
   List<dynamic> _staffList = [];
   bool _isLoading = true;
+  late AppLocalizations l10n;
+
+  @override
+  void didChangeDependencies() {
+    super.didChangeDependencies();
+    l10n = AppLocalizations.of(context)!;
+  }
 
   @override
   void initState() {
@@ -66,12 +74,12 @@ class _StaffManagementScreenState extends ConsumerState<StaffManagementScreen> {
           mainAxisSize: MainAxisSize.min,
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            const Text("Add Staff Member", style: TextStyle(fontSize: 24, fontWeight: FontWeight.bold)),
+            Text(AppLocalizations.of(context)!.addStaffMember, style: const TextStyle(fontSize: 24, fontWeight: FontWeight.bold)),
             const SizedBox(height: 24),
             TextField(
               controller: nameController,
               decoration: InputDecoration(
-                labelText: "Full Name",
+                labelText: AppLocalizations.of(context)!.fullName,
                 filled: true,
                 fillColor: (ref.watch(themeProvider) ? Colors.white : Colors.black).withOpacity(0.05),
                 border: OutlineInputBorder(borderRadius: BorderRadius.circular(16), borderSide: BorderSide.none),
@@ -82,7 +90,7 @@ class _StaffManagementScreenState extends ConsumerState<StaffManagementScreen> {
               controller: phoneController,
               keyboardType: TextInputType.phone,
               decoration: InputDecoration(
-                labelText: "Phone Number",
+                labelText: AppLocalizations.of(context)!.phoneNumber,
                 filled: true,
                 fillColor: (ref.watch(themeProvider) ? Colors.white : Colors.black).withOpacity(0.05),
                 border: OutlineInputBorder(borderRadius: BorderRadius.circular(16), borderSide: BorderSide.none),
@@ -93,7 +101,7 @@ class _StaffManagementScreenState extends ConsumerState<StaffManagementScreen> {
               controller: emailController,
               keyboardType: TextInputType.emailAddress,
               decoration: InputDecoration(
-                labelText: "Email (Optional)",
+                labelText: AppLocalizations.of(context)!.emailOptional,
                 filled: true,
                 fillColor: (ref.watch(themeProvider) ? Colors.white : Colors.black).withOpacity(0.05),
                 border: OutlineInputBorder(borderRadius: BorderRadius.circular(16), borderSide: BorderSide.none),
@@ -114,7 +122,7 @@ class _StaffManagementScreenState extends ConsumerState<StaffManagementScreen> {
                     await _createStaff(nameController.text, phoneController.text, emailController.text);
                   }
                 },
-                child: const Text("Create User", style: TextStyle(color: Colors.white, fontWeight: FontWeight.bold)),
+                child: Text(AppLocalizations.of(context)!.createUser, style: const TextStyle(color: Colors.white, fontWeight: FontWeight.bold)),
               ),
             ),
           ],
@@ -145,11 +153,11 @@ class _StaffManagementScreenState extends ConsumerState<StaffManagementScreen> {
     final confirm = await showDialog<bool>(
       context: context,
       builder: (context) => AlertDialog(
-        title: const Text("Remove Staff?"),
-        content: const Text("They will be unlinked from your shop."),
+        title: Text(AppLocalizations.of(context)!.removeStaffConfirm),
+        content: Text(AppLocalizations.of(context)!.removeStaffWarning),
         actions: [
-          TextButton(onPressed: () => Navigator.pop(context, false), child: const Text("Cancel")),
-          TextButton(onPressed: () => Navigator.pop(context, true), child: const Text("Remove", style: TextStyle(color: Colors.red))),
+          TextButton(onPressed: () => Navigator.pop(context, false), child: Text(AppLocalizations.of(context)!.cancel)),
+          TextButton(onPressed: () => Navigator.pop(context, true), child: Text(AppLocalizations.of(context)!.remove, style: const TextStyle(color: Colors.red))),
         ],
       ),
     );
@@ -181,7 +189,7 @@ class _StaffManagementScreenState extends ConsumerState<StaffManagementScreen> {
         onPressed: _showAddStaffSheet,
         backgroundColor: AppTheme.emerald,
         icon: const Icon(LucideIcons.plus, color: Colors.white),
-        label: const Text("Add Staff", style: TextStyle(color: Colors.white, fontWeight: FontWeight.bold)),
+        label: Text(AppLocalizations.of(context)!.addStaff, style: const TextStyle(color: Colors.white, fontWeight: FontWeight.bold)),
       ),
       body: GradientBackground(
         isDark: isDark,
@@ -193,7 +201,7 @@ class _StaffManagementScreenState extends ConsumerState<StaffManagementScreen> {
                 child: _isLoading 
                   ? const Center(child: CircularProgressIndicator())
                   : _staffList.isEmpty 
-                    ? Center(child: Text("No staff members found", style: TextStyle(color: (isDark ? Colors.white : Colors.black).withOpacity(0.4))))
+                    ? Center(child: Text(AppLocalizations.of(context)!.noStaffFound, style: TextStyle(color: (isDark ? Colors.white : Colors.black).withOpacity(0.4))))
                     : ListView.builder(
                         padding: const EdgeInsets.all(24),
                         itemCount: _staffList.length,
@@ -224,9 +232,9 @@ class _StaffManagementScreenState extends ConsumerState<StaffManagementScreen> {
             ),
           ),
           const SizedBox(width: 20),
-          const Text(
-            "Staff Management",
-            style: TextStyle(fontSize: 24, fontWeight: FontWeight.w900),
+          Text(
+            AppLocalizations.of(context)!.staffManagement,
+            style: const TextStyle(fontSize: 24, fontWeight: FontWeight.w900),
           ),
         ],
       ),
@@ -254,7 +262,7 @@ class _StaffManagementScreenState extends ConsumerState<StaffManagementScreen> {
               children: [
                 Text(staff['name'], style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 16)),
                 const SizedBox(height: 4),
-                Text(staff['role'] ?? "Staff", style: TextStyle(color: (isDark ? Colors.white : Colors.black).withOpacity(0.4))),
+                Text(staff['role'] ?? l10n.staff, style: TextStyle(color: (isDark ? Colors.white : Colors.black).withOpacity(0.4))),
               ],
             ),
           ),
