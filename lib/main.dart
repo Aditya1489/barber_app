@@ -8,25 +8,8 @@ import 'package:barber_sync/core/providers/theme_provider.dart';
 import 'package:barber_sync/core/config/app_config.dart';
 import 'package:barber_sync/services/notification_service.dart';
 
-import 'package:flutter_localizations/flutter_localizations.dart';
-import 'l10n/app_localizations.dart';
-import 'package:barber_sync/core/providers/locale_provider.dart';
-
-import 'package:firebase_core/firebase_core.dart';
-import 'firebase_options.dart';
-
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
-  
-  // Initialize Firebase
-  try {
-    await Firebase.initializeApp(
-      options: DefaultFirebaseOptions.currentPlatform,
-    );
-    debugPrint("🔥 Firebase initialized successfully");
-  } catch (e) {
-    debugPrint("⚠️ Firebase init failed: $e");
-  }
   
   // Diagnostic Log for Developer
   print("\n" + "="*50);
@@ -70,8 +53,7 @@ class MyApp extends ConsumerWidget {
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final router = ref.watch(routerProvider);
-    final locale = ref.watch(localeProvider); // Watch locale changes
-
+    
     return MaterialApp.router(
       title: 'BarberSync',
       debugShowCheckedModeBanner: false,
@@ -79,15 +61,6 @@ class MyApp extends ConsumerWidget {
       darkTheme: AppTheme.getDarkTheme(),
       themeMode: ref.watch(themeProvider) ? ThemeMode.dark : ThemeMode.light,
       routerConfig: router,
-      // Localization Setup
-      locale: locale,
-      localizationsDelegates: const [
-        AppLocalizations.delegate,
-        GlobalMaterialLocalizations.delegate,
-        GlobalWidgetsLocalizations.delegate,
-        GlobalCupertinoLocalizations.delegate,
-      ],
-      supportedLocales: AppLocalizations.supportedLocales,
     );
   }
 }

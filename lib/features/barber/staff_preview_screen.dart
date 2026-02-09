@@ -91,6 +91,8 @@ class _StaffPreviewScreenState extends ConsumerState<StaffPreviewScreen> {
                 _buildStats(isDark, data),
                 const SizedBox(height: 24),
                 _buildAboutSection(isDark, data),
+                const SizedBox(height: 24),
+                _buildSkillsSection(isDark, data), // Added skills section
                 const SizedBox(height: 32),
                 // Always show portfolio section - it handles empty state internally
                 Builder(
@@ -395,6 +397,47 @@ class _StaffPreviewScreenState extends ConsumerState<StaffPreviewScreen> {
         ],
       ),
     ).animate().fadeIn(delay: 300.ms);
+  }
+
+  Widget _buildSkillsSection(bool isDark, Map<String, dynamic> data) {
+    final skills = _parseSkills(data['skills']);
+    
+    if (skills.isEmpty) return const SizedBox.shrink();
+
+    return Padding(
+      padding: const EdgeInsets.symmetric(horizontal: 24),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Text("Expertise".toUpperCase(), style: const TextStyle(fontSize: 11, fontWeight: FontWeight.w900, color: Colors.grey, letterSpacing: 2)),
+          const SizedBox(height: 12),
+          Wrap(
+            spacing: 8,
+            runSpacing: 8,
+            children: skills.map((skill) {
+              return Container(
+                padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 8),
+                decoration: BoxDecoration(
+                  color: isDark ? const Color(0xFF1E1E20) : Colors.grey.shade100,
+                  borderRadius: BorderRadius.circular(12),
+                  border: Border.all(
+                    color: isDark ? Colors.white.withOpacity(0.1) : Colors.black.withOpacity(0.05),
+                  ),
+                ),
+                child: Text(
+                  skill,
+                  style: TextStyle(
+                    fontSize: 12,
+                    fontWeight: FontWeight.w600,
+                    color: isDark ? Colors.white.withOpacity(0.9) : Colors.black87,
+                  ),
+                ),
+              );
+            }).toList(),
+          ),
+        ],
+      ),
+    ).animate().fadeIn(delay: 350.ms);
   }
 
   List<String> _parseSkills(dynamic skillsData) {

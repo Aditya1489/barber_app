@@ -2705,7 +2705,25 @@ class _BarberDashboardScreenState extends ConsumerState<BarberDashboardScreen> {
                     Colors.orange,
                     onTap: () => context.push('/audit-trail')
                   ),
-                  const SizedBox(height: 0),
+                  _buildProfileItem(
+                    isDark, 
+                    LucideIcons.eye, 
+                    "Preview Shop Profile", 
+                    Colors.teal,
+                    onTap: () {
+                       if (_shopProfile != null) {
+                          final shopData = Map<String, dynamic>.from(_shopProfile!);
+                          // For owner, check staff profile availability if exists
+                          if (_staffProfile != null) {
+                            shopData['isAvailable'] = _staffProfile!['isAvailable'];
+                          }
+                          context.push('/shop-preview', extra: shopData); 
+                       } else {
+                         ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text("Shop data not available.")));
+                       }
+                    }
+                  ),
+                  const SizedBox(height: 16),
                   _buildProfileItem(isDark, LucideIcons.fileText, "Privacy Policy", Colors.grey, onTap: () {
                     showAboutDialog(context: context, applicationName: 'BarberBook24', children: [const Text('Privacy Policy details...')]);
                   }),

@@ -8,8 +8,7 @@ import 'package:barber_sync/widgets/gradient_background.dart';
 import 'package:barber_sync/core/theme/app_theme.dart';
 import 'package:barber_sync/core/providers/theme_provider.dart';
 import 'package:barber_sync/services/api_service.dart';
-import 'package:barber_sync/l10n/app_localizations.dart';
-
+import 'shop_preview_screen.dart';
 class ShopSettingsScreen extends ConsumerStatefulWidget {
   final Map<String, dynamic> shopData;
 
@@ -92,12 +91,12 @@ class _ShopSettingsScreenState extends ConsumerState<ShopSettingsScreen> {
         setState(() => _isLoading = false);
         if (result != null) {
           ScaffoldMessenger.of(context).showSnackBar(
-            SnackBar(content: Text(AppLocalizations.of(context)!.shopSettingsUpdated)),
+            const SnackBar(content: Text('Shop settings updated')),
           );
           context.pop(true); // Return true to indicate update
         } else {
           ScaffoldMessenger.of(context).showSnackBar(
-            SnackBar(content: Text(AppLocalizations.of(context)!.shopUpdateFailed)),
+            const SnackBar(content: Text('Failed to update shop')),
           );
         }
       }
@@ -109,6 +108,31 @@ class _ShopSettingsScreenState extends ConsumerState<ShopSettingsScreen> {
         );
       }
     }
+  }
+
+  void _previewShop() {
+    // Current photos
+    List<String> combinedPhotos = List.from(_currentPhotos);
+    
+    // Add new photos (as file paths)
+    // The shop preview screen handles file paths as well
+    for (var file in _newPhotos) {
+      combinedPhotos.add(file.path);
+    }
+    
+    final previewData = {
+      ...widget.shopData,
+      'name': _nameController.text,
+      'phone': _phoneController.text,
+      'address': _addressController.text,
+      'description': _descriptionController.text,
+      'photos': combinedPhotos,
+    };
+    
+    Navigator.push(
+      context, 
+      MaterialPageRoute(builder: (_) => ShopPreviewScreen(shopData: previewData))
+    );
   }
 
   @override
@@ -129,15 +153,15 @@ class _ShopSettingsScreenState extends ConsumerState<ShopSettingsScreen> {
                   padding: const EdgeInsets.all(24),
                   child: Column(
                     children: [
-                      _buildInput(isDark, AppLocalizations.of(context)!.shopName, _nameController, LucideIcons.store),
+                      _buildInput(isDark, 'Shop Name', _nameController, LucideIcons.store),
                       const SizedBox(height: 16),
-                      _buildInput(isDark, AppLocalizations.of(context)!.phoneNumber, _phoneController, LucideIcons.phone),
+                      _buildInput(isDark, 'Phone Number', _phoneController, LucideIcons.phone),
                       const SizedBox(height: 16),
-                      _buildInput(isDark, AppLocalizations.of(context)!.address, _addressController, LucideIcons.mapPin, maxLines: 2),
+                      _buildInput(isDark, 'Address', _addressController, LucideIcons.mapPin, maxLines: 2),
                       const SizedBox(height: 16),
-                      _buildInput(isDark, AppLocalizations.of(context)!.description, _descriptionController, LucideIcons.fileText, maxLines: 3),
+                      _buildInput(isDark, 'Description', _descriptionController, LucideIcons.fileText, maxLines: 3),
                       const SizedBox(height: 24),
-                      _buildPhotosSection(isDark, AppLocalizations.of(context)!),
+                      _buildPhotosSection(isDark),
                       const SizedBox(height: 100), // Spacing
                     ],
                   ),
@@ -171,10 +195,20 @@ class _ShopSettingsScreenState extends ConsumerState<ShopSettingsScreen> {
             ),
           ),
           const SizedBox(width: 20),
-          Text(
-            AppLocalizations.of(context)!.shopSettings,
-            style: const TextStyle(fontSize: 24, fontWeight: FontWeight.w900),
+          const Text(
+            'Shop Settings',
+            style: TextStyle(fontSize: 24, fontWeight: FontWeight.w900),
           ),
+          const Spacer(),
+          IconButton(
+             onPressed: _previewShop,
+             icon: const Icon(LucideIcons.eye, size: 24),
+             tooltip: 'Preview Shop',
+             style: IconButton.styleFrom(
+               backgroundColor: (ref.watch(themeProvider) ? Colors.white : Colors.black).withOpacity(0.05),
+               padding: const EdgeInsets.all(12),
+             ),
+           ),
         ],
       ),
     );
@@ -226,12 +260,12 @@ class _ShopSettingsScreenState extends ConsumerState<ShopSettingsScreen> {
     );
   }
 
-  Widget _buildPhotosSection(bool isDark, AppLocalizations l10n) {
+  Widget _buildPhotosSection(bool isDark) {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
         Text(
-          l10n.shopPhotos.toUpperCase(), 
+          'Shop Photos'.toUpperCase(), 
           style: TextStyle(
             fontSize: 10, 
             fontWeight: FontWeight.bold, 
@@ -269,7 +303,7 @@ class _ShopSettingsScreenState extends ConsumerState<ShopSettingsScreen> {
                       Icon(LucideIcons.camera, color: (isDark ? Colors.white : Colors.black).withOpacity(0.4)),
                       const SizedBox(height: 4),
                       Text(
-                        l10n.add.toUpperCase(), 
+                        'Add'.toUpperCase(), 
                         style: TextStyle(
                           fontSize: 10, 
                           fontWeight: FontWeight.bold, 
@@ -356,7 +390,7 @@ class _ShopSettingsScreenState extends ConsumerState<ShopSettingsScreen> {
         onPressed: _isLoading ? null : _saveChanges,
         child: _isLoading 
           ? const SizedBox(width: 20, height: 20, child: CircularProgressIndicator(color: Colors.white, strokeWidth: 2))
-          : Text(AppLocalizations.of(context)!.saveChanges.toUpperCase(), style: const TextStyle(fontWeight: FontWeight.w900, letterSpacing: 1.5)),
+          : const Text('SAVE CHANGES', style: TextStyle(fontWeight: FontWeight.w900, letterSpacing: 1.5)),
       ),
     );
   }

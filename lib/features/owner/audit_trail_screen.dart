@@ -8,7 +8,6 @@ import 'package:barber_sync/core/providers/theme_provider.dart';
 import 'package:barber_sync/core/providers/user_provider.dart';
 import 'package:barber_sync/services/api_service.dart';
 import 'package:intl/intl.dart';
-import 'package:barber_sync/l10n/app_localizations.dart';
 
 class AuditTrailScreen extends ConsumerStatefulWidget {
   const AuditTrailScreen({super.key});
@@ -32,14 +31,6 @@ class _AuditTrailScreenState extends ConsumerState<AuditTrailScreen> {
     'service_delete',
   ];
 
-  late AppLocalizations l10n;
-
-  @override
-  void didChangeDependencies() {
-    super.didChangeDependencies();
-    l10n = AppLocalizations.of(context)!;
-  }
-
   @override
   void initState() {
     super.initState();
@@ -59,7 +50,7 @@ class _AuditTrailScreenState extends ConsumerState<AuditTrailScreen> {
       final logs = await apiService.getAuditTrail(
         ownerId: user.id,
         shopId: _selectedShopId,
-        actionType: (_selectedActionType == null || _selectedActionType == 'All Actions' || _selectedActionType == l10n.allActions) ? null : _selectedActionType,
+        actionType: (_selectedActionType == null || _selectedActionType == 'All Actions') ? null : _selectedActionType,
       );
       
       if (mounted) {
@@ -125,12 +116,12 @@ class _AuditTrailScreenState extends ConsumerState<AuditTrailScreen> {
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                Text(
-                  l10n.auditTrail,
-                  style: const TextStyle(fontSize: 24, fontWeight: FontWeight.w900),
+                const Text(
+                  'Audit Trail',
+                  style: TextStyle(fontSize: 24, fontWeight: FontWeight.w900),
                 ),
                 Text(
-                  l10n.auditSubtitle,
+                  'Track changes and sensitive actions',
                   style: TextStyle(
                     fontSize: 12,
                     color: (isDark ? Colors.white : Colors.black).withOpacity(0.5),
@@ -167,25 +158,39 @@ class _AuditTrailScreenState extends ConsumerState<AuditTrailScreen> {
                 color: isDark ? AppTheme.darkCardBG : AppTheme.lightCardBG,
                 borderRadius: BorderRadius.circular(16),
               ),
-              child: DropdownButtonHideUnderline(
-                child: DropdownButton<String>(
-                  value: _selectedActionType ?? l10n.allActions,
-                  isExpanded: true,
-                  icon: const Icon(LucideIcons.chevronDown, size: 16),
-                  items: _actionTypes.map((type) {
-                    final displayLabel = type == 'All Actions' ? l10n.allActions : _formatActionType(type);
-                    return DropdownMenuItem(
-                      value: type == 'All Actions' ? l10n.allActions : type,
+              child: PopupMenuButton<String>(
+                initialValue: _selectedActionType ?? 'All Actions',
+                onSelected: (value) {
+                  setState(() => _selectedActionType = value);
+                  _loadAuditTrail();
+                },
+                offset: const Offset(0, 50),
+                shape: RoundedRectangleBorder(
+                  borderRadius: BorderRadius.circular(20),
+                ),
+                color: isDark ? AppTheme.darkCardBG : AppTheme.lightCardBG,
+                itemBuilder: (context) => _actionTypes.map((type) {
+                  final displayLabel = type == 'All Actions' ? 'All Actions' : _formatActionType(type);
+                  return PopupMenuItem<String>(
+                    value: type,
+                    child: Text(
+                      displayLabel,
+                      style: const TextStyle(fontSize: 13, fontWeight: FontWeight.bold),
+                    ),
+                  );
+                }).toList(),
+                child: Row(
+                  children: [
+                    Expanded(
                       child: Text(
-                        displayLabel,
+                        _selectedActionType == null || _selectedActionType == 'All Actions' 
+                          ? 'All Actions' 
+                          : _formatActionType(_selectedActionType!),
                         style: const TextStyle(fontSize: 13, fontWeight: FontWeight.bold),
                       ),
-                    );
-                  }).toList(),
-                  onChanged: (value) {
-                    setState(() => _selectedActionType = value);
-                    _loadAuditTrail();
-                  },
+                    ),
+                    const Icon(LucideIcons.chevronDown, size: 16),
+                  ],
                 ),
               ),
             ),
@@ -207,7 +212,7 @@ class _AuditTrailScreenState extends ConsumerState<AuditTrailScreen> {
           ),
           const SizedBox(height: 16),
           Text(
-            l10n.noAuditLogs,
+            'No audit logs found',
             style: TextStyle(
               fontSize: 18,
               fontWeight: FontWeight.bold,
@@ -216,7 +221,7 @@ class _AuditTrailScreenState extends ConsumerState<AuditTrailScreen> {
           ),
           const SizedBox(height: 8),
           Text(
-            l10n.auditLogsSubtitle,
+            'Actions performed by you or your staff will appear here.',
             style: TextStyle(
               fontSize: 14,
               color: (isDark ? Colors.white : Colors.black).withOpacity(0.4),
@@ -327,9 +332,15 @@ class _AuditTrailScreenState extends ConsumerState<AuditTrailScreen> {
             ],
           ),
           
-          // Details
-          if (reason != null) ...[
+          // Action Details
+          if (log['details'] != null && (log['details'] as Map).isNotEmpty) ...[
             const SizedBox(height: 16),
+            _buildActionDetails(isDark, actionType, Map<String, dynamic>.from(log['details'])),
+          ],
+          
+          // Reason (if provided)
+          if (reason != null) ...[
+            const SizedBox(height: 12),
             Container(
               padding: const EdgeInsets.all(12),
               decoration: BoxDecoration(
@@ -399,6 +410,71 @@ class _AuditTrailScreenState extends ConsumerState<AuditTrailScreen> {
     );
   }
 
+  Widget _buildActionDetails(bool isDark, String actionType, Map<String, dynamic> details) {
+    if (actionType == 'price_change') {
+      final serviceName = details['serviceName'] ?? 'Unknown Service';
+      final oldPrice = details['oldPrice'];
+      final newPrice = details['newPrice'];
+      
+      return Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Text(
+            'Service: $serviceName',
+            style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 13),
+          ),
+          const SizedBox(height: 8),
+          Row(
+            children: [
+              Text(
+                '₹$oldPrice',
+                style: const TextStyle(
+                  decoration: TextDecoration.lineThrough,
+                  color: Colors.grey,
+                  fontSize: 14,
+                ),
+              ),
+              const Padding(
+                padding: EdgeInsets.symmetric(horizontal: 8.0),
+                child: Icon(LucideIcons.arrowRight, size: 14, color: Colors.amber),
+              ),
+              Text(
+                '₹$newPrice',
+                style: const TextStyle(
+                  fontWeight: FontWeight.bold,
+                  color: Colors.amber,
+                  fontSize: 16,
+                ),
+              ),
+            ],
+          ),
+        ],
+      );
+    }
+    
+    // Default fallback for other details
+    return Wrap(
+      spacing: 8,
+      runSpacing: 8,
+      children: details.entries.map((e) {
+        return Container(
+          padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+          decoration: BoxDecoration(
+            color: (isDark ? Colors.white : Colors.black).withOpacity(0.05),
+            borderRadius: BorderRadius.circular(8),
+          ),
+          child: Text(
+            '${e.key}: ${e.value}',
+            style: TextStyle(
+              fontSize: 11,
+              color: (isDark ? Colors.white : Colors.black).withOpacity(0.7),
+            ),
+          ),
+        );
+      }).toList(),
+    );
+  }
+
   Widget _buildRoleBadge(String role, bool isDark) {
     Color badgeColor;
     switch (role) {
@@ -450,13 +526,13 @@ class _AuditTrailScreenState extends ConsumerState<AuditTrailScreen> {
     final difference = now.difference(timestamp);
 
     if (difference.inMinutes < 1) {
-      return l10n.justNow;
+      return 'Just now';
     } else if (difference.inHours < 1) {
-      return '${difference.inMinutes}${l10n.mAgo}';
+      return '${difference.inMinutes}m ago';
     } else if (difference.inDays < 1) {
-      return '${difference.inHours}${l10n.hAgo}';
+      return '${difference.inHours}h ago';
     } else if (difference.inDays < 7) {
-      return '${difference.inDays}${l10n.dAgo}';
+      return '${difference.inDays}d ago';
     } else {
       return DateFormat('MMM d, y • h:mm a').format(timestamp);
     }

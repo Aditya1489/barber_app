@@ -14,15 +14,18 @@ import 'package:barber_sync/features/barber/staff_preview_screen.dart';
 import 'package:barber_sync/features/barber/edit_barber_profile_screen.dart';
 import 'package:barber_sync/features/barber/staff_services_screen.dart';
 import 'package:barber_sync/features/barber/staff_reviews_screen.dart';
+import 'package:barber_sync/features/owner/audit_trail_screen.dart';
 import 'package:barber_sync/core/providers/user_provider.dart';
 
 final routerProvider = Provider<GoRouter>((ref) {
-  final user = ref.watch(userProvider);
-  
+  final userNotifier = ref.read(userProvider.notifier);
+
   return GoRouter(
-    initialLocation: user == null ? '/login' : '/barber',
+    initialLocation: '/login', // Let redirect logic handle the actual initial state
+    refreshListenable: GoRouterRefreshStream(userNotifier.stream),
     redirect: (context, state) {
-      final loggedIn = ref.read(userProvider) != null;
+      final user = ref.read(userProvider);
+      final loggedIn = user != null;
       final isLoggingIn = state.matchedLocation == '/login';
       final isRegistering = state.matchedLocation == '/register';
 
@@ -114,6 +117,27 @@ final routerProvider = Provider<GoRouter>((ref) {
            return StaffReviewsScreen(staffId: staffId);
         },
       ),
+      GoRoute(
+        path: '/audit-trail',
+        builder: (context, state) => const AuditTrailScreen(),
+      ),
     ],
   );
 });
+
+class GoRouterRefreshStream extends ChangeNotifier {
+  GoRouterRefreshStream(Stream<dynamic> stream) {
+    notifyListeners();
+    _subscription = stream.asBroadcastStream().listen(
+      (dynamic _) => notifyListeners(),
+    );
+  }
+
+  late final  dynamic _subscription;
+
+  @override
+  void dispose() {
+    _subscription.cancel();
+    super.dispose();
+  }
+}

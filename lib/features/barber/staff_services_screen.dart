@@ -8,7 +8,6 @@ import 'package:barber_sync/services/api_service.dart';
 import 'package:flutter/services.dart';
 import 'package:barber_sync/widgets/gradient_background.dart';
 import 'package:flutter_animate/flutter_animate.dart';
-import 'package:barber_sync/l10n/app_localizations.dart';
 
 class StaffServicesScreen extends ConsumerStatefulWidget {
   final Map<String, dynamic> staffData;
@@ -25,13 +24,6 @@ class _StaffServicesScreenState extends ConsumerState<StaffServicesScreen> {
   List<String> _selectedServiceIds = [];
   List<String> _initialSelectedServiceIds = [];
   late String _staffId;
-  late AppLocalizations l10n;
-
-  @override
-  void didChangeDependencies() {
-    super.didChangeDependencies();
-    l10n = AppLocalizations.of(context)!;
-  }
 
   bool get _hasChanges {
     if (_selectedServiceIds.length != _initialSelectedServiceIds.length) return true;
@@ -92,7 +84,7 @@ class _StaffServicesScreenState extends ConsumerState<StaffServicesScreen> {
     } catch (e) {
       if (mounted) {
         setState(() => _isLoading = false);
-        ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text("${l10n.error}: $e")));
+        ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text("Error: $e")));
       }
     }
   }
@@ -138,7 +130,7 @@ class _StaffServicesScreenState extends ConsumerState<StaffServicesScreen> {
               children: [
                 Icon(LucideIcons.checkCircle2, color: Colors.white, size: 20),
                 SizedBox(width: 12),
-                Text(l10n.servicesUpdated, style: TextStyle(fontWeight: FontWeight.bold)),
+                Text("Services updated successfully", style: TextStyle(fontWeight: FontWeight.bold)),
               ],
             ),
           )
@@ -149,7 +141,7 @@ class _StaffServicesScreenState extends ConsumerState<StaffServicesScreen> {
       if (mounted) {
         setState(() => _isLoading = false);
         ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text("${l10n.error}: $e"))
+          SnackBar(content: Text("Error: $e"))
         );
       }
     }
@@ -197,7 +189,6 @@ class _StaffServicesScreenState extends ConsumerState<StaffServicesScreen> {
   @override
   Widget build(BuildContext context) {
     final isDark = ref.watch(themeProvider);
-    final l10n = AppLocalizations.of(context)!;
 
     return Scaffold(
       body: GradientBackground(
@@ -270,7 +261,7 @@ class _StaffServicesScreenState extends ConsumerState<StaffServicesScreen> {
                                                 ),
                                                 const SizedBox(height: 4),
                                                 Text(
-                                                  "${service['name'].toString().split(' ').first} · ${service['price'] > 50 ? l10n.premium : l10n.standard}",
+                                                  "${service['name'].toString().split(' ').first} · ${service['price'] > 50 ? 'Premium' : 'Standard'}",
                                                   style: TextStyle(fontSize: 10, color: (isDark ? Colors.white : Colors.black).withOpacity(0.4), fontWeight: FontWeight.bold),
                                                 ),
                                                 const SizedBox(height: 4),
@@ -310,7 +301,7 @@ class _StaffServicesScreenState extends ConsumerState<StaffServicesScreen> {
                                                   ),
                                                   const SizedBox(height: 2),
                                                   Text(
-                                                    isSelected ? l10n.available : l10n.disabled,
+                                                    isSelected ? 'Available' : 'Disabled',
                                                     style: TextStyle(
                                                       fontSize: 8, 
                                                       fontWeight: FontWeight.w900, 
@@ -353,10 +344,10 @@ class _StaffServicesScreenState extends ConsumerState<StaffServicesScreen> {
             child: const Icon(LucideIcons.scissors, size: 64, color: AppTheme.emerald),
           ),
           const SizedBox(height: 24),
-          Text(l10n.noServicesFound, style: const TextStyle(fontSize: 20, fontWeight: FontWeight.w900)),
+          Text("No services found", style: const TextStyle(fontSize: 20, fontWeight: FontWeight.w900)),
           const SizedBox(height: 12),
           Text(
-            l10n.staffNoServicesSug,
+            "It looks like this shop hasn't added any services yet.",
             textAlign: TextAlign.center,
             style: TextStyle(color: (isDark ? Colors.white : Colors.black).withOpacity(0.4), height: 1.5),
           ),
@@ -392,7 +383,7 @@ class _StaffServicesScreenState extends ConsumerState<StaffServicesScreen> {
           ),
           onPressed: hasChanges ? _saveServices : null,
           child: Text(
-            hasChanges ? l10n.saveChanges.toUpperCase() : l10n.nothingToSave,
+            hasChanges ? 'SAVE CHANGES' : 'NO CHANGES',
             style: TextStyle(
               color: hasChanges ? Colors.white : Colors.grey, 
               fontWeight: FontWeight.w900, 
@@ -423,7 +414,7 @@ class _StaffServicesScreenState extends ConsumerState<StaffServicesScreen> {
           ),
           const SizedBox(width: 20),
           Text(
-            l10n.myServices,
+            'My Services',
             style: const TextStyle(fontSize: 24, fontWeight: FontWeight.w900),
           ),
         ],

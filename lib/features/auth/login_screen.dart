@@ -10,8 +10,7 @@ import 'package:barber_sync/core/providers/user_provider.dart';
 import 'package:barber_sync/services/api_service.dart';
 import 'package:barber_sync/models/models.dart';
 import 'package:barber_sync/services/notification_service.dart';
-import 'package:barber_sync/services/fcm_service.dart';
-import 'package:barber_sync/l10n/app_localizations.dart';
+
 
 class LoginScreen extends ConsumerStatefulWidget {
   const LoginScreen({super.key});
@@ -48,8 +47,7 @@ class _LoginScreenState extends ConsumerState<LoginScreen> with TickerProviderSt
 
         if (mounted) {
           if (userData.role != AppRole.customer) {
-            // Initialize FCM for push notifications
-            ref.read(fcmServiceProvider).initialize(userData.id);
+            // Initialize Notifications
             ref.read(notificationServiceProvider).startPolling(userData.id);
             context.go('/barber');
           } else {
@@ -126,7 +124,6 @@ class _LoginScreenState extends ConsumerState<LoginScreen> with TickerProviderSt
   }
 
   Widget _buildRoleSelection() {
-    final l10n = AppLocalizations.of(context)!;
     return Container(
       constraints: const BoxConstraints(maxWidth: 400),
       padding: const EdgeInsets.all(24.0),
@@ -137,8 +134,8 @@ class _LoginScreenState extends ConsumerState<LoginScreen> with TickerProviderSt
           _buildLogo(),
           const SizedBox(height: 60),
             _buildRoleButton(
-              l10n.continueAsBarberOwner,
-              l10n.manageShopClients,
+              'Barber / Owner',
+              'Manage shop & clients',
               LucideIcons.scissors,
               AppTheme.emerald,
               () => setState(() => selectedRole = "BARBER"),
@@ -150,14 +147,13 @@ class _LoginScreenState extends ConsumerState<LoginScreen> with TickerProviderSt
   }
 
   Widget _buildLogo() {
-    final l10n = AppLocalizations.of(context)!;
     return Column(
       children: [
         Container(
           padding: const EdgeInsets.all(24),
           decoration: BoxDecoration(
             color: AppTheme.darkButton,
-            borderRadius: BorderRadius.circular(24), // Match React rounded-3xl
+            borderRadius: BorderRadius.circular(24),
             boxShadow: [
               BoxShadow(
                 color: Colors.red.withOpacity(0.2),
@@ -170,7 +166,7 @@ class _LoginScreenState extends ConsumerState<LoginScreen> with TickerProviderSt
         ),
         const SizedBox(height: 16),
         Text(
-          l10n.appTitle,
+          'BarberSync',
           style: TextStyle(
             color: isDark ? Colors.white : Colors.black,
             fontSize: 40,
@@ -178,7 +174,7 @@ class _LoginScreenState extends ConsumerState<LoginScreen> with TickerProviderSt
           ),
         ),
         Text(
-          l10n.professionalGrooming,
+          'Professional Grooming Management',
           style: TextStyle(
             color: (isDark ? Colors.white : Colors.black).withOpacity(0.6),
             fontSize: 14,
@@ -191,9 +187,9 @@ class _LoginScreenState extends ConsumerState<LoginScreen> with TickerProviderSt
   Widget _buildRoleButton(String title, String sub, IconData icon, Color iconColor, VoidCallback onTap) {
     return InkWell(
       onTap: onTap,
-      borderRadius: BorderRadius.circular(24), // Match React
+      borderRadius: BorderRadius.circular(24),
       child: Container(
-        padding: const EdgeInsets.all(20), // Standardized p-5
+        padding: const EdgeInsets.all(20),
         decoration: BoxDecoration(
           color: isDark ? AppTheme.darkCardBG : AppTheme.lightCardBG,
           borderRadius: BorderRadius.circular(24),
@@ -205,7 +201,7 @@ class _LoginScreenState extends ConsumerState<LoginScreen> with TickerProviderSt
               padding: const EdgeInsets.all(12),
               decoration: BoxDecoration(
                 color: iconColor,
-                borderRadius: BorderRadius.circular(12), // rounded-lg
+                borderRadius: BorderRadius.circular(12),
               ),
               child: Icon(icon, color: Colors.white, size: 24),
             ),
@@ -227,8 +223,6 @@ class _LoginScreenState extends ConsumerState<LoginScreen> with TickerProviderSt
   }
 
   Widget _buildAuthForm() {
-    final l10n = AppLocalizations.of(context)!;
-
     return SafeArea(
       child: Padding(
         padding: const EdgeInsets.all(24.0),
@@ -245,17 +239,17 @@ class _LoginScreenState extends ConsumerState<LoginScreen> with TickerProviderSt
           ),
           const SizedBox(height: 32),
           Text(
-            isLogin ? l10n.welcomeBack : l10n.joinApp,
+            isLogin ? 'Welcome Back' : 'Join BarberSync',
             style: const TextStyle(fontSize: 32, fontWeight: FontWeight.w900),
           ),
           Text(
-            selectedRole == "CUSTOMER" ? l10n.customerAccount : l10n.barberAdmin,
+            selectedRole == "CUSTOMER" ? 'Customer Account' : 'Barber / Shop Admin',
             style: TextStyle(color: (isDark ? Colors.white : Colors.black).withOpacity(0.6)),
           ),
           const SizedBox(height: 40),
-          _buildInput(LucideIcons.mail, l10n.emailAddress, _emailController),
+          _buildInput(LucideIcons.mail, 'Email Address', _emailController),
           const SizedBox(height: 16),
-          _buildInput(LucideIcons.lock, l10n.password, _passwordController, isPassword: true),
+          _buildInput(LucideIcons.lock, 'Password', _passwordController, isPassword: true),
           const SizedBox(height: 24),
           SizedBox(
             width: double.infinity,
@@ -263,7 +257,7 @@ class _LoginScreenState extends ConsumerState<LoginScreen> with TickerProviderSt
               onPressed: _isLoading ? null : _handleLogin,
               child: _isLoading 
                 ? const SizedBox(width: 20, height: 20, child: CircularProgressIndicator(color: Colors.white, strokeWidth: 2))
-                : Text(isLogin ? l10n.login : l10n.createAccount),
+                : Text(isLogin ? 'Login' : 'Create Account'),
             ),
           ),
           const SizedBox(height: 24),
@@ -271,7 +265,7 @@ class _LoginScreenState extends ConsumerState<LoginScreen> with TickerProviderSt
             child: TextButton(
               onPressed: () => context.push('/register'),
               child: Text(
-                isLogin ? l10n.noAccount : l10n.haveAccount,
+                isLogin ? 'Don\'t have an account?' : 'Already have an account?',
                 style: const TextStyle(color: AppTheme.darkAccent, fontWeight: FontWeight.bold),
               ),
             ),

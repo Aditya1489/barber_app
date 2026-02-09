@@ -8,7 +8,7 @@ import 'package:barber_sync/core/providers/theme_provider.dart';
 import 'package:barber_sync/services/api_service.dart';
 import 'package:barber_sync/widgets/user_avatar.dart';
 import 'package:flutter_animate/flutter_animate.dart';
-import 'package:barber_sync/l10n/app_localizations.dart';
+import 'package:flutter_animate/flutter_animate.dart';
 
 class ShopPreviewScreen extends ConsumerStatefulWidget {
   final Map<String, dynamic> shopData;
@@ -22,18 +22,20 @@ class ShopPreviewScreen extends ConsumerStatefulWidget {
 class _ShopPreviewScreenState extends ConsumerState<ShopPreviewScreen> {
   List<dynamic> _services = [];
   List<dynamic> _staff = [];
+  List<dynamic> _reviews = [];
+  Map<String, dynamic>? _reviewStats;
+  List<dynamic> _popularServices = [];
   bool _isLoading = true;
   final ScrollController _scrollController = ScrollController();
   final PageController _photoPageController = PageController();
   int _currentPhotoIndex = 0;
   String? _activeSectionKey;
 
-  late AppLocalizations l10n;
+
 
   @override
   void didChangeDependencies() {
     super.didChangeDependencies();
-    l10n = AppLocalizations.of(context)!;
     _activeSectionKey ??= 'about';
   }
 
@@ -56,19 +58,25 @@ class _ShopPreviewScreenState extends ConsumerState<ShopPreviewScreen> {
       final results = await Future.wait([
         apiService.getShopServices(widget.shopData['id']),
         apiService.getShopStaff(widget.shopData['id']),
+        apiService.getShopReviews(widget.shopData['id']),
+        apiService.getShopReviewStats(widget.shopData['id']),
+        apiService.getPopularServices(widget.shopData['id']),
       ]);
       
       if (mounted) {
         setState(() {
-          _services = results[0];
+          _services = results[0] as List;
           // Sort staff to put Owner first
-          _staff = results[1]..sort((a, b) {
+          _staff = (results[1] as List)..sort((a, b) {
             bool aIsOwner = (a['role']?.toString().toLowerCase().contains('owner') ?? false);
             bool bIsOwner = (b['role']?.toString().toLowerCase().contains('owner') ?? false);
             if (aIsOwner && !bIsOwner) return -1;
             if (!aIsOwner && bIsOwner) return 1;
             return 0;
           });
+          _reviews = results[2] as List;
+          _reviewStats = results[3] as Map<String, dynamic>?;
+          _popularServices = results[4] as List;
           _isLoading = false;
         });
       }
@@ -137,59 +145,111 @@ class _ShopPreviewScreenState extends ConsumerState<ShopPreviewScreen> {
                     fit: BoxFit.cover,
                   ),
             // Dark Gradient Overlay
-            DecoratedBox(
-              decoration: BoxDecoration(
-                gradient: LinearGradient(
-                  begin: Alignment.bottomCenter,
-                  end: Alignment.topCenter,
-                  colors: [
-                    (isDark ? const Color(0xFF0C0C0E) : Colors.black).withOpacity(0.8),
-                    Colors.transparent,
-                  ],
-                  stops: const [0.0, 0.4],
+            IgnorePointer(
+              child: DecoratedBox(
+                decoration: BoxDecoration(
+                  gradient: LinearGradient(
+                    begin: Alignment.bottomCenter,
+                    end: Alignment.topCenter,
+                    colors: [
+                      (isDark ? const Color(0xFF0C0C0E) : Colors.black).withOpacity(0.8),
+                      Colors.transparent,
+                    ],
+                    stops: const [0.0, 0.4],
+                  ),
                 ),
               ),
             ),
             // Identity Line & Badges Overlay
             Positioned(
-              bottom: 24,
+              bottom: 12,
               left: 20,
               right: 20,
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Row(
-                    children: [
-                      Container(
-                        padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
-                        decoration: BoxDecoration(
-                          color: AppTheme.emerald,
-                          borderRadius: BorderRadius.circular(8),
-                        ),
-                        child: Text(l10n.openNow, style: const TextStyle(color: Colors.white, fontSize: 9, fontWeight: FontWeight.bold, letterSpacing: 0.5)),
+              child: IgnorePointer(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    // Badges Row
+                    Builder(
+                      builder: (context) {
+                        final status = _getShopStatus();
+                        return Row(
+                          children: [
+                            Container(
+                              padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+                              decoration: BoxDecoration(
+                                color: status['color'],
+                                borderRadius: BorderRadius.circular(20),
+                                boxShadow: [BoxShadow(color: Colors.black.withOpacity(0.2), blurRadius: 4, offset: const Offset(0, 2))],
+                              ),
+                              child: Row(
+                                mainAxisSize: MainAxisSize.min,
+                                children: [
+                                  const Icon(LucideIcons.clock, size: 10, color: Colors.white),
+                                  const SizedBox(width: 4),
+                                  Text(
+                                    status['label'], 
+                                    style: const TextStyle(color: Colors.white, fontSize: 10, fontWeight: FontWeight.w800, letterSpacing: 0.5)
+                                  ),
+                                ],
+                              ),
+                            ),
+                            const SizedBox(width: 8),
+                            Container(
+                              padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+                              decoration: BoxDecoration(
+                                color: Colors.black.withOpacity(0.6),
+                                borderRadius: BorderRadius.circular(20),
+                                border: Border.all(color: Colors.white.withOpacity(0.2)),
+                              ),
+                              child: const Text('~15 MIN WAIT', style: TextStyle(color: Colors.white, fontSize: 10, fontWeight: FontWeight.bold, letterSpacing: 0.5)),
+                            ),
+                          ],
+                        );
+                      }
+                    ).animate().fadeIn(delay: 200.ms).slideX(begin: -0.1),
+                    
+                    const SizedBox(height: 8),
+                    
+                    // Shop Name with Shadow
+                    Text(
+                      widget.shopData['name'],
+                      style: TextStyle(
+                        fontSize: 36, 
+                        fontWeight: FontWeight.w900, 
+                        color: Colors.white,
+                        height: 1.1,
+                        shadows: [
+                          BoxShadow(color: Colors.black.withOpacity(0.5), blurRadius: 10, offset: const Offset(0, 2)),
+                        ],
                       ),
-                      const SizedBox(width: 8),
-                      Container(
-                        padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
-                        decoration: BoxDecoration(
-                          color: Colors.white.withOpacity(0.2),
-                          borderRadius: BorderRadius.circular(8),
+                      maxLines: 2,
+                      overflow: TextOverflow.ellipsis,
+                    ).animate().fadeIn(delay: 300.ms).slideX(begin: -0.1),
+                    
+                    const SizedBox(height: 8),
+                    
+                    // Tagline
+                    Row(
+                      children: [
+                        Icon(LucideIcons.star, size: 14, color: Colors.amber),
+                        const SizedBox(width: 6),
+                        Text(
+                          'Premium Grooming Experience',
+                          style: TextStyle(
+                            fontSize: 14, 
+                            color: Colors.white.withOpacity(0.9), 
+                            fontWeight: FontWeight.w600,
+                            shadows: [
+                              BoxShadow(color: Colors.black.withOpacity(0.5), blurRadius: 4),
+                            ],
+                          ),
                         ),
-                        child: Text(l10n.waitTime, style: const TextStyle(color: Colors.white, fontSize: 9, fontWeight: FontWeight.bold, letterSpacing: 0.5)),
-                      ),
-                    ],
-                  ).animate().fadeIn(delay: 200.ms).slideX(begin: -0.1),
-                  const SizedBox(height: 12),
-                  Text(
-                    widget.shopData['name'],
-                    style: const TextStyle(fontSize: 32, fontWeight: FontWeight.w900, color: Colors.white),
-                  ).animate().fadeIn(delay: 300.ms).slideX(begin: -0.1),
-                  const SizedBox(height: 4),
-                  Text(
-                    l10n.shopSubtitle,
-                    style: const TextStyle(fontSize: 13, color: Colors.white70, fontWeight: FontWeight.w500),
-                  ).animate().fadeIn(delay: 400.ms).slideX(begin: -0.1),
-                ],
+                      ],
+                    ).animate().fadeIn(delay: 400.ms).slideX(begin: -0.1),
+                  ],
+                ),
               ),
             ),
           ],
@@ -200,10 +260,10 @@ class _ShopPreviewScreenState extends ConsumerState<ShopPreviewScreen> {
 
   Widget _buildNavigationChips(bool isDark) {
     final Map<String, String> sectionMap = {
-      'about': l10n.about,
-      'team': l10n.team,
-      'services': l10n.services,
-      'reviews': l10n.reviews,
+      'about': 'About',
+      'team': 'Team',
+      'services': 'Services',
+      'reviews': 'Reviews',
     };
     final sectionKeys = sectionMap.keys.toList();
     return Container(
@@ -242,36 +302,34 @@ class _ShopPreviewScreenState extends ConsumerState<ShopPreviewScreen> {
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          // 1. About Section
-          const SizedBox(height: 8),
-          _sectionTitle(l10n.theExperience),
-          const SizedBox(height: 12),
-          Text(
-            widget.shopData['description'] ?? l10n.defaultShopDescription,
-            style: TextStyle(fontSize: 14, color: (isDark ? Colors.white : Colors.black).withOpacity(0.6), height: 1.6),
-          ),
-          const SizedBox(height: 32),
-
-          // 2. Meet the Team
-          Row(
-            mainAxisAlignment: MainAxisAlignment.spaceBetween,
-            children: [
-              _sectionTitle(l10n.meetTheTeam),
-              Text("${_staff.length} ${l10n.masters}", style: const TextStyle(fontSize: 11, color: AppTheme.emerald, fontWeight: FontWeight.bold)),
-            ],
-          ),
-          const SizedBox(height: 16),
-          _buildStaffGrid(isDark),
-          const SizedBox(height: 32),
-
-          // 3. Trust & Social Proof (Placeholders)
-          _buildTrustBanner(isDark),
-          const SizedBox(height: 32),
-
-          // 4. Services
-          _sectionTitle(l10n.ourServices),
-          const SizedBox(height: 16),
-          _buildServicesGrouped(isDark),
+            // Content switched by tabs
+          if (_activeSectionKey == 'about') ...[
+             const SizedBox(height: 8),
+             _sectionTitle('The Experience'),
+             const SizedBox(height: 12),
+             Text(
+               widget.shopData['description'] ?? 'Experience top-tier grooming services tailored to your style.',
+               style: TextStyle(fontSize: 14, color: (isDark ? Colors.white : Colors.black).withOpacity(0.6), height: 1.6),
+             ),
+             const SizedBox(height: 32),
+             _buildTrustBanner(isDark),
+          ] else if (_activeSectionKey == 'team') ...[
+             const SizedBox(height: 8),
+             _sectionTitle('Meet The Team'),
+             const SizedBox(height: 16),
+             _buildStaffGrid(isDark), // Consider modifying to vertical grid if needed for 'Full View'
+          ] else if (_activeSectionKey == 'services') ...[
+             const SizedBox(height: 8),
+             _sectionTitle('Our Services'),
+             const SizedBox(height: 16),
+             _buildServicesGrouped(isDark),
+          ] else if (_activeSectionKey == 'reviews') ...[
+             const SizedBox(height: 8),
+             _sectionTitle('Client Reviews'),
+             const SizedBox(height: 16),
+             _buildReviewsSection(isDark),
+          ],
+          
           const SizedBox(height: 120), // Bottom padding for CTA
         ],
       ),
@@ -286,7 +344,7 @@ class _ShopPreviewScreenState extends ConsumerState<ShopPreviewScreen> {
   }
 
   Widget _buildStaffGrid(bool isDark) {
-    if (_staff.isEmpty) return Text(l10n.noStaffFound);
+    if (_staff.isEmpty) return const Text('No staff found');
 
     return SizedBox(
       height: 140,
@@ -331,7 +389,7 @@ class _ShopPreviewScreenState extends ConsumerState<ShopPreviewScreen> {
                     maxLines: 1,
                   ),
                   Text(
-                    isOwner ? l10n.owner : (member['role'] ?? l10n.staff),
+                    isOwner ? 'Owner & Master Barber' : (member['role'] ?? 'Staff Member'),
                     style: TextStyle(fontSize: 10, color: (isDark ? Colors.white : Colors.black).withOpacity(0.5)),
                   ),
                 ],
@@ -340,6 +398,120 @@ class _ShopPreviewScreenState extends ConsumerState<ShopPreviewScreen> {
           ).animate().fadeIn(delay: Duration(milliseconds: 100 * index)).scale(begin: const Offset(0.9, 0.9));
         },
       ),
+    );
+  }
+
+
+  Widget _buildReviewsSection(bool isDark) {
+    if (_reviews.isEmpty) {
+      return Center(
+        child: Column(
+          children: [
+            Icon(LucideIcons.messageSquare, size: 48, color: (isDark ? Colors.white : Colors.black).withOpacity(0.2)),
+            const SizedBox(height: 16),
+            Text("No reviews yet", style: TextStyle(color: (isDark ? Colors.white : Colors.black).withOpacity(0.5))),
+          ],
+        ),
+      );
+    }
+
+    return Column(
+      children: [
+        // Summary Card
+        Container(
+          padding: const EdgeInsets.all(20),
+          decoration: BoxDecoration(
+            color: isDark ? const Color(0xFF1E1E1E) : Colors.white,
+            borderRadius: BorderRadius.circular(20),
+            border: Border.all(color: (isDark ? Colors.white : Colors.black).withOpacity(0.05)),
+          ),
+          child: Row(
+            children: [
+              Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(
+                    (_reviewStats?['averageRating'] ?? 0.0).toString(),
+                    style: const TextStyle(fontSize: 48, fontWeight: FontWeight.w900, height: 1),
+                  ),
+                  const SizedBox(height: 8),
+                  Row(
+                    children: List.generate(5, (index) {
+                      final rating = (_reviewStats?['averageRating'] ?? 0.0);
+                      return Icon(
+                        index < rating.round() ? LucideIcons.star : LucideIcons.star,
+                        size: 16,
+                        color: index < rating.round() ? Colors.amber : Colors.grey.withOpacity(0.3),
+                      );
+                    }),
+                  ),
+                  const SizedBox(height: 4),
+                  Text("${_reviews.length} Verified Reviews", style: const TextStyle(fontSize: 12, color: Colors.grey)),
+                ],
+              ),
+            ],
+          ),
+        ),
+        const SizedBox(height: 24),
+        
+        // Review List
+        ListView.separated(
+          shrinkWrap: true,
+          physics: const NeverScrollableScrollPhysics(),
+          itemCount: _reviews.length,
+          separatorBuilder: (_, __) => const SizedBox(height: 16),
+          itemBuilder: (context, index) {
+            final review = _reviews[index];
+            final rating = review['rating'] as int;
+            return Container(
+              padding: const EdgeInsets.all(16),
+              decoration: BoxDecoration(
+                color: (isDark ? Colors.white : Colors.black).withOpacity(0.03),
+                borderRadius: BorderRadius.circular(16),
+              ),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Row(
+                    children: [
+                      UserAvatar(
+                        name: review['customerName'] ?? "Anonymous",
+                        radius: 16,
+                        photoUrl: null, // Photos if available
+                      ),
+                      const SizedBox(width: 12),
+                      Expanded(
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            Text(review['customerName'] ?? "Client", style: const TextStyle(fontWeight: FontWeight.bold)),
+                            Text("Verified Client", style: TextStyle(fontSize: 9, color: AppTheme.emerald.withOpacity(0.8))),
+                          ],
+                        ),
+                      ),
+                      Container(
+                        padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                        decoration: BoxDecoration(color: Colors.amber.withOpacity(0.1), borderRadius: BorderRadius.circular(8)),
+                        child: Row(
+                          children: [
+                            const Icon(LucideIcons.star, size: 10, color: Colors.amber),
+                            const SizedBox(width: 4),
+                            Text(rating.toString(), style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 10, color: Colors.amber)),
+                          ],
+                        ),
+                      ),
+                    ],
+                  ),
+                  if (review['comment'] != null && review['comment'].isNotEmpty) ...[
+                    const SizedBox(height: 12),
+                    Text(review['comment'], style: TextStyle(fontSize: 13, height: 1.5, color: (isDark ? Colors.white : Colors.black).withOpacity(0.8))),
+                  ]
+                ],
+              ),
+            );
+          },
+        ),
+      ],
     );
   }
 
@@ -354,9 +526,9 @@ class _ShopPreviewScreenState extends ConsumerState<ShopPreviewScreen> {
       child: Row(
         mainAxisAlignment: MainAxisAlignment.spaceAround,
         children: [
-          _trustIcon(LucideIcons.heart, l10n.lovedByClients),
-          _trustIcon(LucideIcons.shieldCheck, l10n.cleanHygienic),
-          _trustIcon(LucideIcons.medal, l10n.certifiedMasters),
+          _trustIcon(LucideIcons.heart, 'Loved by Clients'),
+          _trustIcon(LucideIcons.shieldCheck, 'Clean & Hygienic'),
+          _trustIcon(LucideIcons.medal, 'Certified Masters'),
         ],
       ),
     );
@@ -373,14 +545,24 @@ class _ShopPreviewScreenState extends ConsumerState<ShopPreviewScreen> {
   }
 
   Widget _buildServicesGrouped(bool isDark) {
-    if (_services.isEmpty) return Text(l10n.noServices);
+    if (_services.isEmpty) return const Text('No services available');
 
-    // Simple grouping for preview (In real app, categories would come from DB)
+    // Use popular services if available, otherwise fall back to first 2
+    final popularPicks = _popularServices.isNotEmpty 
+        ? _popularServices.take(2).toList() 
+        : _services.take(2).toList();
+    
+    // Get IDs of popular picks to exclude from main menu
+    final popularIds = popularPicks.map((s) => s['id']).toSet();
+    final mainMenu = _services.where((s) => !popularIds.contains(s['id'])).toList();
+
     return Column(
       children: [
-        _serviceCategory(isDark, l10n.popularPicks, _services.take(2).toList(), isHot: true),
-        const SizedBox(height: 24),
-        _serviceCategory(isDark, l10n.mainMenu, _services.skip(2).toList()),
+        _serviceCategory(isDark, 'Popular Picks', popularPicks, isHot: true),
+        if (mainMenu.isNotEmpty) ...[
+          const SizedBox(height: 24),
+          _serviceCategory(isDark, 'Main Menu', mainMenu),
+        ],
       ],
     );
   }
@@ -430,14 +612,14 @@ class _ShopPreviewScreenState extends ConsumerState<ShopPreviewScreen> {
                       Container(
                         padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
                         decoration: BoxDecoration(color: AppTheme.emerald.withOpacity(0.1), borderRadius: BorderRadius.circular(4)),
-                        child: Text(l10n.top, style: const TextStyle(color: AppTheme.emerald, fontSize: 8, fontWeight: FontWeight.bold)),
+                        child: const Text('TOP', style: TextStyle(color: AppTheme.emerald, fontSize: 8, fontWeight: FontWeight.bold)),
                       ),
                     ]
                   ],
                 ),
                 const SizedBox(height: 4),
                 Text(
-                  service['description'] ?? l10n.professionalService(service['name']),
+                  service['description'] ?? 'Professional ${service['name']} service',
                   style: TextStyle(fontSize: 12, color: Colors.grey[600]),
                   maxLines: 1, overflow: TextOverflow.ellipsis,
                 ),
@@ -446,13 +628,43 @@ class _ShopPreviewScreenState extends ConsumerState<ShopPreviewScreen> {
                   children: [
                     Icon(LucideIcons.clock, size: 12, color: Colors.grey[400]),
                     const SizedBox(width: 4),
-                    Text("${service['duration']} ${l10n.mins}", style: TextStyle(color: Colors.grey[500], fontSize: 11)),
+                    Text("${service['duration']} mins", style: TextStyle(color: Colors.grey[500], fontSize: 11)),
                   ],
                 ),
               ],
             ),
           ),
           const SizedBox(width: 16),
+          // Service Image
+          Container(
+            width: 60,
+            height: 60,
+            decoration: BoxDecoration(
+              borderRadius: BorderRadius.circular(12),
+              color: Colors.grey.withOpacity(0.1),
+            ),
+            child: service['imageUrl'] != null
+                ? ClipRRect(
+                    borderRadius: BorderRadius.circular(12),
+                    child: Image.network(
+                      service['imageUrl'].startsWith('http') 
+                          ? service['imageUrl'] 
+                          : 'http://192.168.0.100:8000${service['imageUrl']}',
+                      fit: BoxFit.cover,
+                      errorBuilder: (context, error, stackTrace) {
+                        return Container(
+                          padding: const EdgeInsets.all(12),
+                          child: const Icon(LucideIcons.scissors, color: Colors.grey, size: 24),
+                        );
+                      },
+                    ),
+                  )
+                : Container(
+                    padding: const EdgeInsets.all(12),
+                    child: const Icon(LucideIcons.scissors, color: Colors.grey, size: 24),
+                  ),
+          ),
+          const SizedBox(width: 12),
           Text(
             "\$${service['price']}",
             style: const TextStyle(fontWeight: FontWeight.w900, fontSize: 18, color: AppTheme.emerald),
@@ -483,9 +695,9 @@ class _ShopPreviewScreenState extends ConsumerState<ShopPreviewScreen> {
                 shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
                 elevation: 0,
               ),
-              child: Text(
-                l10n.bookAppointment,
-                style: const TextStyle(color: Colors.white, fontWeight: FontWeight.w900, fontSize: 15, letterSpacing: 1),
+              child: const Text(
+                'BOOK APPOINTMENT',
+                style: TextStyle(color: Colors.white, fontWeight: FontWeight.w900, fontSize: 15, letterSpacing: 1),
               ),
             ),
           ),
@@ -514,23 +726,86 @@ class _ShopPreviewScreenState extends ConsumerState<ShopPreviewScreen> {
          ),
          if (photos.length > 1)
            Positioned(
-             bottom: 110, // Above the content overlay
-             left: 0, right: 0,
-             child: Row(
-               mainAxisAlignment: MainAxisAlignment.center,
-               children: List.generate(photos.length, (index) => AnimatedContainer(
-                 duration: const Duration(milliseconds: 300),
-                 margin: const EdgeInsets.symmetric(horizontal: 4),
-                 height: 6,
-                 width: _currentPhotoIndex == index ? 20 : 6,
-                 decoration: BoxDecoration(
-                   color: _currentPhotoIndex == index ? AppTheme.emerald : Colors.white.withOpacity(0.5),
-                   borderRadius: BorderRadius.circular(3),
-                 ),
-               )),
+             top: 48, // Safe area padding
+             right: 20,
+             child: Container(
+               padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+               decoration: BoxDecoration(
+                 color: Colors.black.withOpacity(0.5),
+                 borderRadius: BorderRadius.circular(20),
+               ),
+               child: Row(
+                 mainAxisSize: MainAxisSize.min,
+                 children: [
+                   const Icon(LucideIcons.image, color: Colors.white, size: 12),
+                   const SizedBox(width: 6),
+                   Text(
+                     "${_currentPhotoIndex + 1}/${photos.length}",
+                     style: const TextStyle(color: Colors.white, fontSize: 11, fontWeight: FontWeight.bold),
+                   ),
+                 ],
+               ),
              ),
            ),
        ],
      );
+  }
+  Map<String, dynamic> _getShopStatus() {
+    try {
+      // 1. Check for manual override (from staff/owner toggle)
+      if (widget.shopData.containsKey('isAvailable')) {
+        final isAvailableVal = widget.shopData['isAvailable'];
+        debugPrint("ShopPreview: isAvailable key found. Value: $isAvailableVal (${isAvailableVal.runtimeType})");
+        
+        bool? isAvailable;
+        if (isAvailableVal is bool) isAvailable = isAvailableVal;
+        if (isAvailableVal is String) isAvailable = isAvailableVal.toLowerCase() == 'true';
+        if (isAvailableVal is int) isAvailable = isAvailableVal == 1;
+
+        if (isAvailable == false) {
+           return {'isOpen': false, 'label': 'CLOSED (OFFLINE)', 'color': Colors.redAccent}; // Explicit label
+        } else if (isAvailable == true) {
+           return {'isOpen': true, 'label': 'OPEN NOW', 'color': AppTheme.emerald};
+        }
+      } else {
+        debugPrint("ShopPreview: isAvailable key MISSING in shopData. Keys: ${widget.shopData.keys.toList()}");
+      }
+
+      // 2. Fallback to Operating Hours Logic
+      final hours = widget.shopData['hours'];
+      if (hours == null || hours is! Map || hours.isEmpty) {
+        // Default to Open if no hours set (common for new implementations)
+        return {'isOpen': true, 'label': 'OPEN NOW', 'color': AppTheme.emerald}; 
+      }
+
+      final now = DateTime.now();
+      final dayNames = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'];
+      final today = dayNames[now.weekday - 1];
+
+      if (!hours.containsKey(today)) {
+         return {'isOpen': false, 'label': 'CLOSED', 'color': Colors.grey};
+      }
+
+      final todayHours = hours[today];
+      if (todayHours == null || todayHours is! Map || !todayHours.containsKey('start') || !todayHours.containsKey('end')) {
+         return {'isOpen': false, 'label': 'CLOSED', 'color': Colors.grey};
+      }
+
+      final startParts = todayHours['start'].toString().split(':');
+      final endParts = todayHours['end'].toString().split(':');
+      
+      final nowMinutes = now.hour * 60 + now.minute;
+      final startMinutes = int.parse(startParts[0]) * 60 + int.parse(startParts[1]);
+      final endMinutes = int.parse(endParts[0]) * 60 + int.parse(endParts[1]);
+
+      if (nowMinutes >= startMinutes && nowMinutes < endMinutes) {
+         return {'isOpen': true, 'label': 'OPEN NOW', 'color': AppTheme.emerald};
+      } else {
+         return {'isOpen': false, 'label': 'CLOSED', 'color': Colors.redAccent};
+      }
+    } catch (e) {
+      debugPrint('Error parsing shop status: $e');
+      return {'isOpen': true, 'label': 'OPEN NOW', 'color': AppTheme.emerald}; // Fallback
+    }
   }
 }

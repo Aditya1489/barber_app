@@ -59,7 +59,7 @@ class NotificationService {
 
   void startPolling(String userId) {
     _pollingTimer?.cancel();
-    _pollingTimer = Timer.periodic(const Duration(seconds: 3), (_) => _checkNotifications(userId));
+    _pollingTimer = Timer.periodic(const Duration(seconds: 30), (_) => _checkNotifications(userId));
     _checkNotifications(userId);
   }
 

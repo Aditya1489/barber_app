@@ -296,6 +296,19 @@ class ApiService {
     }
   }
 
+  Future<List<dynamic>> getPopularServices(String shopId) async {
+    try {
+      final response = await _dio.get('/shops/$shopId/services/popular');
+      if (response.statusCode == 200) {
+        return response.data as List<dynamic>;
+      }
+      return [];
+    } catch (e) {
+      AppLogger.error('Error fetching popular services: $e');
+      return [];
+    }
+  }
+
   Future<dynamic> addService(String shopId, Map<String, dynamic> data) async {
     if (shopId.isEmpty) {
       AppLogger.error('addService called with empty shopId');
@@ -416,6 +429,33 @@ class ApiService {
     }
   }
 
+  // Shop Reviews
+  Future<List<dynamic>> getShopReviews(String shopId) async {
+    try {
+      final response = await _dio.get('/reviews/shop/$shopId');
+      if (response.statusCode == 200) {
+        return response.data as List<dynamic>;
+      }
+      return [];
+    } catch (e) {
+      AppLogger.error('Error fetching shop reviews: $e');
+      return [];
+    }
+  }
+
+  Future<Map<String, dynamic>?> getShopReviewStats(String shopId) async {
+    try {
+      final response = await _dio.get('/reviews/shop/$shopId/stats');
+      if (response.statusCode == 200) {
+        return response.data;
+      }
+      return null;
+    } catch (e) {
+      AppLogger.error('Error fetching shop review stats: $e');
+      return null;
+    }
+  }
+
   // Staff Reviews
   Future<List<dynamic>> getStaffReviews(String staffId) async {
     try {
@@ -462,7 +502,7 @@ class ApiService {
   }) async {
     try {
       final response = await _dio.get(
-        '/analytics/owner/$ownerId/audit-trail',
+        '/owner/audit-trail/$ownerId',
         queryParameters: {
           if (shopId != null) 'shop_id': shopId,
           if (actionType != null) 'action_type': actionType,
