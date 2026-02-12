@@ -34,10 +34,10 @@ class Service {
 
   factory Service.fromJson(Map<String, dynamic> json) {
     return Service(
-      id: json['id'],
-      name: json['name'],
-      price: json['price'].toDouble(),
-      duration: json['duration'],
+      id: json['id'] ?? '',
+      name: json['name'] ?? 'Unknown Service',
+      price: (json['price'] ?? 0).toDouble(),
+      duration: json['duration'] ?? 0,
       imageUrl: json['imageUrl'],
     );
   }
@@ -70,16 +70,16 @@ class Staff {
 
   factory Staff.fromJson(Map<String, dynamic> json) {
     return Staff(
-      id: json['id'],
-      name: json['name'],
-      role: json['role'],
-      experience: json['experience'],
-      rating: json['rating'].toDouble(),
-      reviewsCount: json['reviewsCount'],
-      description: json['description'],
-      imageUrl: json['imageUrl'],
-      workPhotos: List<String>.from(json['workPhotos']),
-      services: List<String>.from(json['services']),
+      id: json['id'] ?? '',
+      name: json['name'] ?? 'Unknown Staff',
+      role: json['role'] ?? 'Staff',
+      experience: json['experience'] ?? 0,
+      rating: (json['rating'] ?? 0).toDouble(),
+      reviewsCount: json['reviewsCount'] ?? 0,
+      description: json['description'] ?? '',
+      imageUrl: json['imageUrl'] ?? '',
+      workPhotos: List<String>.from(json['workPhotos'] ?? []),
+      services: List<String>.from(json['services'] ?? []),
     );
   }
 }
@@ -111,16 +111,16 @@ class BarberShop {
 
   factory BarberShop.fromJson(Map<String, dynamic> json) {
     return BarberShop(
-      id: json['id'],
-      name: json['name'],
-      address: json['address'],
-      description: json['description'],
-      rating: json['rating'].toDouble(),
-      reviewsCount: json['reviewsCount'],
-      photos: List<String>.from(json['photos']),
-      coordinates: Map<String, double>.from(json['coordinates']),
-      staff: (json['staff'] as List).map((e) => Staff.fromJson(e)).toList(),
-      services: (json['services'] as List).map((e) => Service.fromJson(e)).toList(),
+      id: json['id'] ?? '',
+      name: json['name'] ?? '',
+      address: json['address'] ?? '',
+      description: json['description'] ?? '',
+      rating: (json['rating'] ?? 0).toDouble(),
+      reviewsCount: json['reviewsCount'] ?? 0,
+      photos: List<String>.from(json['photos'] ?? []),
+      coordinates: Map<String, double>.from(json['coordinates'] ?? {}),
+      staff: (json['staff'] as List? ?? []).map((e) => Staff.fromJson(e)).toList(),
+      services: (json['services'] as List? ?? []).map((e) => Service.fromJson(e)).toList(),
     );
   }
 }
@@ -161,25 +161,25 @@ class Appointment {
 
   factory Appointment.fromJson(Map<String, dynamic> json) {
     return Appointment(
-      id: json['id'],
-      shopId: json['shopId'],
-      staffId: json['staffId'],
-      customerId: json['customerId'],
+      id: json['id'] ?? '',
+      shopId: json['shopId'] ?? '',
+      staffId: json['staffId'] ?? '',
+      customerId: json['customerId'] ?? '',
       customerName: json['customerName'],
       customerPhoto: json['customerPhoto'],
-      services: List<String>.from(json['services']),
-      date: json['date'],
-      timeSlot: json['timeSlot'],
+      services: List<String>.from(json['services'] ?? []),
+      date: json['date'] ?? '',
+      timeSlot: json['timeSlot'] ?? '',
       status: AppointmentStatus.values.firstWhere(
         (e) {
           final normalizedName = e.name.replaceAll(RegExp(r'(?=[A-Z])'), '_').toUpperCase();
-          return normalizedName == (json['status'] as String).replaceAll(' ', '_').toUpperCase();
+          return normalizedName == (json['status'] as String? ?? '').replaceAll(' ', '_').toUpperCase();
         },
         orElse: () => AppointmentStatus.pending,
       ),
-      totalAmount: json['totalAmount'].toDouble(),
-      totalDuration: json['totalDuration'],
-      bookedAt: json['bookedAt'],
+      totalAmount: (json['totalAmount'] ?? 0).toDouble(),
+      totalDuration: json['totalDuration'] ?? 0,
+      bookedAt: json['bookedAt'] ?? '',
       privateNotes: json['privateNotes'],
     );
   }
@@ -191,8 +191,14 @@ class User {
   final String email;
   final String phone;
   final AppRole role;
+  final String? token;
   final String? profilePhoto;
   final Map<String, bool> permissions;
+  final bool agreedToPrivacy;
+  final bool agreedToTerms;
+  final String? legalConsentName;
+  final String? legalConsentPlace;
+  final String? legalConsentTimestamp;
 
   User({
     required this.id,
@@ -202,17 +208,32 @@ class User {
     required this.role,
     this.profilePhoto,
     required this.permissions,
+    this.token,
+    this.agreedToPrivacy = false,
+    this.agreedToTerms = false,
+    this.legalConsentName,
+    this.legalConsentPlace,
+    this.legalConsentTimestamp,
   });
 
   factory User.fromJson(Map<String, dynamic> json) {
     return User(
-      id: json['id'],
-      name: json['name'],
-      email: json['email'],
-      phone: json['phone'],
-      role: AppRole.values.firstWhere((e) => e.name.toUpperCase() == json['role']),
+      id: json['id'] ?? '',
+      name: json['name'] ?? '',
+      email: json['email'] ?? '',
+      phone: json['phone'] ?? '',
+      role: AppRole.values.firstWhere(
+        (e) => e.name.toUpperCase() == (json['role'] ?? 'CUSTOMER'),
+        orElse: () => AppRole.barber,
+      ),
       profilePhoto: json['profilePhoto'],
-      permissions: Map<String, bool>.from(json['permissions']),
+      permissions: json['permissions'] != null ? Map<String, bool>.from(json['permissions']) : {},
+      token: json['token'],
+      agreedToPrivacy: json['agreedToPrivacy'] ?? false,
+      agreedToTerms: json['agreedToTerms'] ?? false,
+      legalConsentName: json['legalConsentName'],
+      legalConsentPlace: json['legalConsentPlace'],
+      legalConsentTimestamp: json['legalConsentTimestamp'],
     );
   }
 
@@ -225,6 +246,12 @@ class User {
       'role': role.name.toUpperCase(),
       'profilePhoto': profilePhoto,
       'permissions': permissions,
+      'token': token,
+      'agreedToPrivacy': agreedToPrivacy,
+      'agreedToTerms': agreedToTerms,
+      'legalConsentName': legalConsentName,
+      'legalConsentPlace': legalConsentPlace,
+      'legalConsentTimestamp': legalConsentTimestamp,
     };
   }
 
@@ -236,6 +263,12 @@ class User {
     AppRole? role,
     String? profilePhoto,
     Map<String, bool>? permissions,
+    String? token,
+    bool? agreedToPrivacy,
+    bool? agreedToTerms,
+    String? legalConsentName,
+    String? legalConsentPlace,
+    String? legalConsentTimestamp,
   }) {
     return User(
       id: id ?? this.id,
@@ -245,6 +278,12 @@ class User {
       role: role ?? this.role,
       profilePhoto: profilePhoto ?? this.profilePhoto,
       permissions: permissions ?? this.permissions,
+      token: token ?? this.token,
+      agreedToPrivacy: agreedToPrivacy ?? this.agreedToPrivacy,
+      agreedToTerms: agreedToTerms ?? this.agreedToTerms,
+      legalConsentName: legalConsentName ?? this.legalConsentName,
+      legalConsentPlace: legalConsentPlace ?? this.legalConsentPlace,
+      legalConsentTimestamp: legalConsentTimestamp ?? this.legalConsentTimestamp,
     );
   }
 }

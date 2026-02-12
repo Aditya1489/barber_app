@@ -19,18 +19,34 @@ class UserNotifier extends StateNotifier<User?> {
     final userJson = prefs.getString(_userKey);
     if (userJson != null) {
       try {
-        state = User.fromJson(jsonDecode(userJson));
+        final user = User.fromJson(jsonDecode(userJson));
+        // If user is just a Customer (incomplete reg), do not auto-login
+        if (user.role == AppRole.customer) {
+           prefs.remove(_userKey);
+           state = null;
+        } else {
+           state = user;
+        }
       } catch (e) {
-        // Clear corrupt data
-        prefs.remove(_userKey);
+        print("DEBUG: Error loading user: $e. Clearing storage.");
+        await prefs.remove(_userKey);
+        state = null;
       }
+    } else {
+      print("DEBUG: No user found in storage.");
     }
   }
 
   Future<void> setUser(User user) async {
     state = user;
     final prefs = await SharedPreferences.getInstance();
-    await prefs.setString(_userKey, jsonEncode(user.toJson()));
+    final jsonStr = jsonEncode(user.toJson());
+    print("DEBUG: UserNotifier.setUser saving to $_userKey: $jsonStr");
+    await prefs.setString(_userKey, jsonStr);
+  }
+
+  void setTemporaryUser(User user) {
+    state = user;
   }
 
   Future<void> logout() async {

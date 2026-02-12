@@ -20,18 +20,59 @@ class LoginScreen extends ConsumerStatefulWidget {
 }
 
 class _LoginScreenState extends ConsumerState<LoginScreen> with TickerProviderStateMixin {
-  bool isLogin = true;
-  String? selectedRole = "BARBER"; // Default to BARBER to skip selection
+  bool isLogin = true; 
+  String? selectedRole = "BARBER"; 
   late bool isDark;
   bool _isLoading = false;
+  bool _isOtpSent = false;
 
-  final TextEditingController _emailController = TextEditingController();
-  final TextEditingController _passwordController = TextEditingController();
+  final TextEditingController _nameController = TextEditingController();
+  final TextEditingController _phoneController = TextEditingController();
+  final TextEditingController _otpController = TextEditingController();
 
-  Future<void> _handleLogin() async {
-    if (_emailController.text.isEmpty || _passwordController.text.isEmpty) {
+  Future<void> _handlePhoneSubmit() async {
+    final name = _nameController.text.trim();
+    final phone = _phoneController.text.trim();
+    
+    if (name.isEmpty) {
       ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text("Please enter email and password")),
+        const SnackBar(content: Text("Please enter your full name")),
+      );
+      return;
+    }
+    
+    if (phone.isEmpty || phone.length < 10) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text("Please enter a valid phone number")),
+      );
+      return;
+    }
+
+    setState(() => _isLoading = true);
+    final apiService = ref.read(apiServiceProvider);
+    
+    // Request OTP
+    final success = await apiService.requestOtp(phone);
+    if (mounted) {
+      setState(() => _isLoading = false);
+      if (success) {
+        setState(() => _isOtpSent = true);
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text("OTP sent successfully")),
+        );
+      } else {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text("Failed to send OTP. Please try again.")),
+        );
+      }
+    }
+  }
+
+  Future<void> _handleOtpSubmit() async {
+    final otp = _otpController.text.trim();
+    if (otp.length != 6) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text("Please enter valid 6-digit OTP")),
       );
       return;
     }
@@ -40,37 +81,123 @@ class _LoginScreenState extends ConsumerState<LoginScreen> with TickerProviderSt
     final apiService = ref.read(apiServiceProvider);
     
     try {
-      final response = await apiService.login(_emailController.text, _passwordController.text);
-      if (response != null && response['user'] != null) {
-        final userData = User.fromJson(response['user']);
-        await ref.read(userProvider.notifier).setUser(userData);
+      final response = await apiService.verifyOtp(_phoneController.text.trim(), otp);
+      print("DEBUG: OTP Response: $response");
+      
+      if (response != null) {
+        if (response['access_token'] != null && response['action'] != 'REGISTER') {
+           await _finalizeLogin(response);
+        } else if (response['action'] == 'SELECT_ROLE') {
+           _handleRoleSelection(response['user']['id'], response['roles']);
+        } else if (response['action'] == 'REGISTER') {
+           // Create temporary user for registration with name captured at login
+           final tempUser = User(
+             id: 'temp',
+             name: _nameController.text.trim(),
+             email: '',
+             phone: _phoneController.text.trim(),
+             role: AppRole.customer,
+             permissions: {},
+             token: response['access_token'],
+           );
+           ref.read(userProvider.notifier).setTemporaryUser(tempUser);
+           context.push('/register');
+        }
+      } else {
+        _showError("Invalid OTP");
+      }
+    } catch (e) {
+      _showError("Login error: $e");
+    } finally {
+      if (mounted) setState(() => _isLoading = false);
+    }
+  }
+  
+  void _handleRoleSelection(String userId, List<dynamic> roles) {
+      // Filter for relevant roles
+      final validRoles = roles.where((r) => ['OWNER', 'BARBER'].contains(r['role'])).toList();
+
+      if (validRoles.isEmpty) {
+          _showError("No Barber or Owner account found associated with this number.");
+          return;
+      }
+      
+      if (validRoles.length == 1) {
+          final r = validRoles.first;
+          _selectRole(userId, r['role'], r['shop_id']);
+          return;
+      }
+
+      // Show Dialog
+      showDialog(context: context, builder: (ctx) => AlertDialog(
+          title: const Text("Select Account"),
+          content: Column(
+             mainAxisSize: MainAxisSize.min,
+             children: validRoles.map((r) => ListTile(
+                leading: Icon(r['role'] == 'OWNER' ? LucideIcons.crown : LucideIcons.scissors),
+                title: Text("${r['shop_name'] ?? 'Shop'}"),
+                subtitle: Text(r['role']),
+                onTap: () {
+                    Navigator.pop(ctx);
+                    _selectRole(userId, r['role'], r['shop_id']);
+                }
+             )).toList()
+          )
+      ));
+  }
+
+  Future<void> _selectRole(String userId, String role, String? shopId) async {
+       setState(() => _isLoading = true);
+       final apiService = ref.read(apiServiceProvider);
+       print("DEBUG: Selecting role: $role, shopId: $shopId");
+       
+       final response = await apiService.selectRole(userId, role, shopId);
+       print("DEBUG: SelectRole Response: $response");
+       
+       if (mounted) setState(() => _isLoading = false);
+       
+       if (response != null) { 
+           await _finalizeLogin(response);
+       } else {
+           _showError("Failed to select role");
+       }
+  }
+
+  Future<void> _finalizeLogin(Map<String, dynamic> response) async {
+    print("DEBUG: _finalizeLogin called with response keys: ${response.keys}");
+    if (response['user'] != null) {
+        var userData = User.fromJson(response['user']);
+        
+        // Attach token if available
+        if (response['access_token'] != null) {
+            print("DEBUG: Found access_token in response: ${response['access_token'].substring(0, 10)}...");
+            userData = userData.copyWith(token: response['access_token']);
+            print("DEBUG: userData.token after copyWith: ${userData.token != null ? 'SET' : 'NULL'}");
+        } else {
+            print("DEBUG: NO access_token in response!");
+        }
 
         if (mounted) {
           if (userData.role != AppRole.customer) {
             // Initialize Notifications
+            print("DEBUG: Calling setUser...");
+            await ref.read(userProvider.notifier).setUser(userData);
+            print("DEBUG: setUser finished.");
             ref.read(notificationServiceProvider).startPolling(userData.id);
             context.go('/barber');
           } else {
-            ScaffoldMessenger.of(context).showSnackBar(
-              const SnackBar(content: Text("This app is for Barbers & Owners only. Please use the Customer App.")),
-            );
+             // New user or Customer trying to become Barber/Owner
+             // Navigate to profile completion/registration flow
+             ref.read(userProvider.notifier).setTemporaryUser(userData);
+             context.push('/register');
           }
         }
-      } else {
-        if (mounted) {
-          ScaffoldMessenger.of(context).showSnackBar(
-            const SnackBar(content: Text("Invalid email or password")),
-          );
-        }
-      }
-    } catch (e) {
-      if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text("Login error: $e")),
-        );
-      }
-    } finally {
-      if (mounted) setState(() => _isLoading = false);
+    }
+  }
+
+  void _showError(String msg) {
+    if (mounted) {
+      ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(msg)));
     }
   }
 
@@ -83,7 +210,8 @@ class _LoginScreenState extends ConsumerState<LoginScreen> with TickerProviderSt
         isDark: isDark,
         child: Stack(
           children: [
-            Center(
+            Align(
+              alignment: Alignment.center,
               child: SingleChildScrollView(
                 physics: const ClampingScrollPhysics(),
                 child: AnimatedSwitcher(
@@ -130,7 +258,7 @@ class _LoginScreenState extends ConsumerState<LoginScreen> with TickerProviderSt
       child: Column(
         mainAxisAlignment: MainAxisAlignment.center,
         children: [
-          const SizedBox(height: 140), // Increased to shift downward
+          const SizedBox(height: 40),
           _buildLogo(),
           const SizedBox(height: 60),
             _buildRoleButton(
@@ -229,49 +357,61 @@ class _LoginScreenState extends ConsumerState<LoginScreen> with TickerProviderSt
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-          IconButton(
-            onPressed: () => setState(() => selectedRole = null),
-            icon: const Icon(LucideIcons.arrowLeft),
-            style: IconButton.styleFrom(
-              backgroundColor: isDark ? AppTheme.darkCardBG : AppTheme.lightCardBG,
-              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+            const SizedBox(height: 32),
+            Text(
+              _isOtpSent ? 'Verify OTP' : 'Welcome Back',
+              style: const TextStyle(fontSize: 32, fontWeight: FontWeight.w900),
             ),
-          ),
-          const SizedBox(height: 32),
-          Text(
-            isLogin ? 'Welcome Back' : 'Join BarberSync',
-            style: const TextStyle(fontSize: 32, fontWeight: FontWeight.w900),
-          ),
-          Text(
-            selectedRole == "CUSTOMER" ? 'Customer Account' : 'Barber / Shop Admin',
-            style: TextStyle(color: (isDark ? Colors.white : Colors.black).withOpacity(0.6)),
-          ),
-          const SizedBox(height: 40),
-          _buildInput(LucideIcons.mail, 'Email Address', _emailController),
-          const SizedBox(height: 16),
-          _buildInput(LucideIcons.lock, 'Password', _passwordController, isPassword: true),
-          const SizedBox(height: 24),
-          SizedBox(
-            width: double.infinity,
-            child: ElevatedButton(
-              onPressed: _isLoading ? null : _handleLogin,
-              child: _isLoading 
-                ? const SizedBox(width: 20, height: 20, child: CircularProgressIndicator(color: Colors.white, strokeWidth: 2))
-                : Text(isLogin ? 'Login' : 'Create Account'),
+            Text(
+              _isOtpSent 
+                 ? 'Enter the code sent to ${_phoneController.text}' 
+                 : 'Login via OTP',
+              style: const TextStyle(fontSize: 16, color: Colors.grey),
             ),
-          ),
-          const SizedBox(height: 24),
-          Center(
-            child: TextButton(
-              onPressed: () => context.push('/register'),
-              child: Text(
-                isLogin ? 'Don\'t have an account?' : 'Already have an account?',
-                style: const TextStyle(color: AppTheme.darkAccent, fontWeight: FontWeight.bold),
+            const SizedBox(height: 32),
+            
+            if (!_isOtpSent) ...[
+               _buildInput(LucideIcons.user, 'Full Name', _nameController),
+               const SizedBox(height: 16),
+               _buildInput(LucideIcons.phone, 'Phone Number', _phoneController),
+            ],
+
+            if (_isOtpSent)
+               _buildInput(LucideIcons.key, '6-Digit OTP', _otpController),
+
+            const SizedBox(height: 24),
+            SizedBox(
+              width: double.infinity,
+              child: ElevatedButton(
+                onPressed: _isLoading 
+                   ? null 
+                   : (_isOtpSent ? _handleOtpSubmit : _handlePhoneSubmit),
+                child: _isLoading 
+                  ? const SizedBox(width: 20, height: 20, child: CircularProgressIndicator(color: Colors.white, strokeWidth: 2))
+                  : Text(_isOtpSent ? 'Verify & Login' : 'Get OTP'),
               ),
             ),
-          ),
-        ],
-      ),
+            
+            Visibility(
+              visible: _isOtpSent,
+              maintainSize: true, 
+              maintainAnimation: true,
+              maintainState: true,
+              child: Center(
+                child: TextButton(
+                  onPressed: () => setState(() {
+                    _isOtpSent = false;
+                    _otpController.clear();
+                  }),
+                  child: Text(
+                    'Change Phone Number',
+                    style: TextStyle(color: isDark ? AppTheme.darkAccent : Colors.black, fontWeight: FontWeight.bold),
+                  ),
+                ),
+              ),
+            ),
+          ],
+        ),
       ),
     );
   }
@@ -286,6 +426,9 @@ class _LoginScreenState extends ConsumerState<LoginScreen> with TickerProviderSt
       child: TextField(
         controller: controller,
         obscureText: isPassword,
+        keyboardType: hint.contains("Phone") || hint.contains("OTP") 
+            ? TextInputType.number 
+            : TextInputType.text,
         decoration: InputDecoration(
           icon: Icon(icon, color: (isDark ? Colors.white : Colors.black).withOpacity(0.4)),
           hintText: hint,

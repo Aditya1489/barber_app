@@ -16,28 +16,49 @@ import 'package:barber_sync/features/barber/staff_services_screen.dart';
 import 'package:barber_sync/features/barber/staff_reviews_screen.dart';
 import 'package:barber_sync/features/owner/audit_trail_screen.dart';
 import 'package:barber_sync/core/providers/user_provider.dart';
+import 'package:barber_sync/features/common/splash_screen.dart';
 
 final routerProvider = Provider<GoRouter>((ref) {
   final userNotifier = ref.read(userProvider.notifier);
 
   return GoRouter(
-    initialLocation: '/login', // Let redirect logic handle the actual initial state
+    initialLocation: '/splash', // Start with Splash Screen
     refreshListenable: GoRouterRefreshStream(userNotifier.stream),
     redirect: (context, state) {
       final user = ref.read(userProvider);
       final loggedIn = user != null;
       final isLoggingIn = state.matchedLocation == '/login';
       final isRegistering = state.matchedLocation == '/register';
+      final isSplash = state.matchedLocation == '/splash';
+
+      if (isSplash) return null;
 
       if (!loggedIn && !isLoggingIn && !isRegistering) {
         return '/login';
       }
-      if (loggedIn && (isLoggingIn || isRegistering)) {
-        return '/barber';
+      
+      if (loggedIn) {
+        // If user is logged in as Customer, they MUST complete registration
+        // So allow them to stay on /register or force them there if they try to access /barber
+        final isCustomer = user.role.name.toUpperCase() == 'CUSTOMER';
+        
+        if (isCustomer) {
+           if (!isRegistering) return '/register';
+           return null; // Stay on /register
+        }
+
+        // For Barber/Owner, redirect to dashboard if they are on login/register pages
+        if (isLoggingIn || isRegistering) {
+          return '/barber';
+        }
       }
       return null;
     },
     routes: [
+      GoRoute(
+        path: '/splash',
+        builder: (context, state) => const SplashScreen(),
+      ),
       GoRoute(
         path: '/login',
         builder: (context, state) => const LoginScreen(),

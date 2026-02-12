@@ -6,6 +6,7 @@ import 'package:barber_sync/widgets/gradient_background.dart';
 import 'package:barber_sync/core/theme/app_theme.dart';
 import 'package:barber_sync/core/providers/theme_provider.dart';
 import 'package:barber_sync/services/api_service.dart';
+import 'package:barber_sync/widgets/premium_dialog_helper.dart';
 
 class StaffManagementScreen extends ConsumerStatefulWidget {
   final Map<String, dynamic> shopData;
@@ -50,7 +51,7 @@ class _StaffManagementScreenState extends ConsumerState<StaffManagementScreen> {
   void _showAddStaffSheet() {
     final nameController = TextEditingController();
     final phoneController = TextEditingController();
-    final emailController = TextEditingController();
+    final formKey = GlobalKey<FormState>();
 
     showModalBottomSheet(
       context: context,
@@ -58,79 +59,82 @@ class _StaffManagementScreenState extends ConsumerState<StaffManagementScreen> {
       backgroundColor: Colors.transparent,
       builder: (context) => Container(
         padding: EdgeInsets.fromLTRB(24, 24, 24, MediaQuery.of(context).viewInsets.bottom + 24),
-         decoration: BoxDecoration(
+        decoration: BoxDecoration(
           color: ref.watch(themeProvider) ? AppTheme.darkCardBG : Colors.white,
           borderRadius: const BorderRadius.vertical(top: Radius.circular(30)),
         ),
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            const Text('Add Staff Member', style: TextStyle(fontSize: 24, fontWeight: FontWeight.bold)),
-            const SizedBox(height: 24),
-            TextField(
-              controller: nameController,
-              decoration: InputDecoration(
-                labelText: 'Full Name',
-                filled: true,
-                fillColor: (ref.watch(themeProvider) ? Colors.white : Colors.black).withOpacity(0.05),
-                border: OutlineInputBorder(borderRadius: BorderRadius.circular(16), borderSide: BorderSide.none),
-              ),
-            ),
-            const SizedBox(height: 16),
-            TextField(
-              controller: phoneController,
-              keyboardType: TextInputType.phone,
-              decoration: InputDecoration(
-                labelText: 'Phone Number',
-                filled: true,
-                fillColor: (ref.watch(themeProvider) ? Colors.white : Colors.black).withOpacity(0.05),
-                border: OutlineInputBorder(borderRadius: BorderRadius.circular(16), borderSide: BorderSide.none),
-              ),
-            ),
-            const SizedBox(height: 16),
-            TextField(
-              controller: emailController,
-              keyboardType: TextInputType.emailAddress,
-              decoration: InputDecoration(
-                labelText: 'Email (Optional)',
-                filled: true,
-                fillColor: (ref.watch(themeProvider) ? Colors.white : Colors.black).withOpacity(0.05),
-                border: OutlineInputBorder(borderRadius: BorderRadius.circular(16), borderSide: BorderSide.none),
-              ),
-            ),
-            const SizedBox(height: 32),
-            SizedBox(
-              width: double.infinity,
-              child: ElevatedButton(
-                style: ElevatedButton.styleFrom(
-                  backgroundColor: AppTheme.emerald,
-                  padding: const EdgeInsets.symmetric(vertical: 16),
-                  shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+        child: Form(
+          key: formKey,
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              const Text('Add Staff Member', style: TextStyle(fontSize: 24, fontWeight: FontWeight.bold)),
+              const SizedBox(height: 24),
+              TextFormField(
+                controller: nameController,
+                decoration: InputDecoration(
+                  labelText: 'Full Name *',
+                  filled: true,
+                  fillColor: (ref.watch(themeProvider) ? Colors.white : Colors.black).withOpacity(0.05),
+                  border: OutlineInputBorder(borderRadius: BorderRadius.circular(16), borderSide: BorderSide.none),
                 ),
-                onPressed: () async {
-                  if (nameController.text.isNotEmpty && phoneController.text.isNotEmpty) {
-                    Navigator.pop(context);
-                    await _createStaff(nameController.text, phoneController.text, emailController.text);
+                validator: (value) {
+                  if (value == null || value.isEmpty) {
+                    return 'Full name is required';
                   }
+                  return null;
                 },
-                child: const Text('Create User', style: TextStyle(color: Colors.white, fontWeight: FontWeight.bold)),
               ),
-            ),
-          ],
+              const SizedBox(height: 16),
+              TextFormField(
+                controller: phoneController,
+                keyboardType: TextInputType.phone,
+                decoration: InputDecoration(
+                  labelText: 'Phone Number *',
+                  filled: true,
+                  fillColor: (ref.watch(themeProvider) ? Colors.white : Colors.black).withOpacity(0.05),
+                  border: OutlineInputBorder(borderRadius: BorderRadius.circular(16), borderSide: BorderSide.none),
+                ),
+                validator: (value) {
+                  if (value == null || value.isEmpty) {
+                    return 'Phone number is required';
+                  }
+                  return null;
+                },
+              ),
+              const SizedBox(height: 32),
+              SizedBox(
+                width: double.infinity,
+                child: ElevatedButton(
+                  style: ElevatedButton.styleFrom(
+                    backgroundColor: AppTheme.emerald,
+                    padding: const EdgeInsets.symmetric(vertical: 16),
+                    shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+                  ),
+                  onPressed: () async {
+                    if (formKey.currentState!.validate()) {
+                      Navigator.pop(context);
+                      await _createStaff(nameController.text, phoneController.text);
+                    }
+                  },
+                  child: const Text('Create User', style: TextStyle(color: Colors.white, fontWeight: FontWeight.bold)),
+                ),
+              ),
+            ],
+          ),
         ),
       ),
     );
   }
 
-  Future<void> _createStaff(String name, String phone, String email) async {
+  Future<void> _createStaff(String name, String phone) async {
     setState(() => _isLoading = true);
     final apiService = ref.read(apiServiceProvider);
     try {
       await apiService.createStaffForShop(widget.shopData['id'], {
         'name': name,
         'phone': phone,
-        'email': email.isEmpty ? null : email,
       });
       _loadStaff();
     } catch (e) {
@@ -142,16 +146,13 @@ class _StaffManagementScreenState extends ConsumerState<StaffManagementScreen> {
   }
 
   Future<void> _removeStaff(String staffId) async {
-    final confirm = await showDialog<bool>(
+    final confirm = await PremiumDialog.showConfirmation(
       context: context,
-      builder: (context) => AlertDialog(
-        title: const Text('Remove Staff Member?'),
-        content: const Text('This action cannot be undone. The staff member will be removed from your shop.'),
-        actions: [
-          TextButton(onPressed: () => Navigator.pop(context, false), child: const Text('Cancel')),
-          TextButton(onPressed: () => Navigator.pop(context, true), child: const Text('Remove', style: TextStyle(color: Colors.red))),
-        ],
-      ),
+      title: 'Remove Staff Member?',
+      content: 'This action cannot be undone. The staff member will be removed from your shop.',
+      confirmText: 'Remove',
+      confirmColor: Colors.red,
+      icon: LucideIcons.userMinus,
     );
 
     if (confirm == true) {
@@ -234,6 +235,8 @@ class _StaffManagementScreenState extends ConsumerState<StaffManagementScreen> {
   }
 
   Widget _buildStaffCard(bool isDark, Map<String, dynamic> staff) {
+    final imageUrl = ref.read(apiServiceProvider).resolveUrl(staff['imageUrl']);
+
     return Container(
       margin: const EdgeInsets.only(bottom: 16),
       padding: const EdgeInsets.all(20),
@@ -245,13 +248,9 @@ class _StaffManagementScreenState extends ConsumerState<StaffManagementScreen> {
         children: [
           CircleAvatar(
             radius: 24,
-            backgroundImage: NetworkImage(
-              staff['imageUrl'] != null && staff['imageUrl'].toString().isNotEmpty
-                  ? (staff['imageUrl'].toString().startsWith('http')
-                      ? staff['imageUrl']
-                      : 'http://192.168.0.100:8000${staff['imageUrl']}')
-                  : "https://picsum.photos/200/200"
-            ),
+            backgroundImage: imageUrl != null
+                ? NetworkImage(imageUrl)
+                : const AssetImage('assets/images/default_avatar.png') as ImageProvider,
           ),
           const SizedBox(width: 20),
           Expanded(

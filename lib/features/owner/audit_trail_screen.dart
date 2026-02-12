@@ -130,17 +130,6 @@ class _AuditTrailScreenState extends ConsumerState<AuditTrailScreen> {
               ],
             ),
           ),
-          InkWell(
-            onTap: _loadAuditTrail,
-            child: Container(
-              padding: const EdgeInsets.all(12),
-              decoration: BoxDecoration(
-                color: isDark ? AppTheme.darkCardBG : AppTheme.lightCardBG,
-                borderRadius: BorderRadius.circular(16),
-              ),
-              child: const Icon(LucideIcons.refreshCw, size: 20),
-            ),
-          ),
         ],
       ),
     );
@@ -201,33 +190,42 @@ class _AuditTrailScreenState extends ConsumerState<AuditTrailScreen> {
   }
 
   Widget _buildEmptyState(bool isDark) {
-    return Center(
-      child: Column(
-        mainAxisAlignment: MainAxisAlignment.center,
-        children: [
-          Icon(
-            LucideIcons.fileSearch,
-            size: 64,
-            color: (isDark ? Colors.white : Colors.black).withOpacity(0.3),
+    return RefreshIndicator(
+      onRefresh: _loadAuditTrail,
+      color: isDark ? AppTheme.emerald : Colors.blue,
+      child: SingleChildScrollView(
+        physics: const AlwaysScrollableScrollPhysics(),
+        child: Container(
+          height: MediaQuery.of(context).size.height * 0.6,
+          alignment: Alignment.center,
+          child: Column(
+            mainAxisAlignment: MainAxisAlignment.center,
+            children: [
+              Icon(
+                LucideIcons.fileSearch,
+                size: 64,
+                color: (isDark ? Colors.white : Colors.black).withOpacity(0.3),
+              ),
+              const SizedBox(height: 16),
+              Text(
+                'No audit logs found',
+                style: TextStyle(
+                  fontSize: 18,
+                  fontWeight: FontWeight.bold,
+                  color: (isDark ? Colors.white : Colors.black).withOpacity(0.6),
+                ),
+              ),
+              const SizedBox(height: 8),
+              Text(
+                'Actions performed by you or your staff will appear here.',
+                style: TextStyle(
+                  fontSize: 14,
+                  color: (isDark ? Colors.white : Colors.black).withOpacity(0.4),
+                ),
+              ),
+            ],
           ),
-          const SizedBox(height: 16),
-          Text(
-            'No audit logs found',
-            style: TextStyle(
-              fontSize: 18,
-              fontWeight: FontWeight.bold,
-              color: (isDark ? Colors.white : Colors.black).withOpacity(0.6),
-            ),
-          ),
-          const SizedBox(height: 8),
-          Text(
-            'Actions performed by you or your staff will appear here.',
-            style: TextStyle(
-              fontSize: 14,
-              color: (isDark ? Colors.white : Colors.black).withOpacity(0.4),
-            ),
-          ),
-        ],
+        ),
       ),
     );
   }
@@ -235,6 +233,7 @@ class _AuditTrailScreenState extends ConsumerState<AuditTrailScreen> {
   Widget _buildAuditList(bool isDark) {
     return RefreshIndicator(
       onRefresh: _loadAuditTrail,
+      color: isDark ? AppTheme.emerald : Colors.blue,
       child: ListView.builder(
         padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 8),
         itemCount: _auditLogs.length,

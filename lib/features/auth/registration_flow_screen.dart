@@ -5,12 +5,14 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 import 'package:lucide_icons/lucide_icons.dart';
 import 'package:geolocator/geolocator.dart';
+import 'package:geocoding/geocoding.dart';
 import 'package:barber_sync/widgets/gradient_background.dart';
 import 'package:barber_sync/core/theme/app_theme.dart';
 import 'package:barber_sync/core/providers/theme_provider.dart';
 import 'package:barber_sync/services/api_service.dart';
 import 'package:barber_sync/core/providers/user_provider.dart';
 import 'package:barber_sync/models/models.dart';
+import 'package:barber_sync/widgets/premium_dialog_helper.dart';
 
 class RegistrationFlowScreen extends ConsumerStatefulWidget {
   const RegistrationFlowScreen({super.key});
@@ -21,12 +23,69 @@ class RegistrationFlowScreen extends ConsumerStatefulWidget {
 
 class _RegistrationFlowScreenState extends ConsumerState<RegistrationFlowScreen> {
   // Flow control
-  String _step = 'credentials'; // credentials, role, owner_details, staff_details
+  final PageController _pageController = PageController();
+  
   String _selectedRole = '';
   bool _isLoading = false;
   late bool isDark;
+  bool _agreedToPrivacy = false;
+  bool _agreedToTerms = false;
 
-  // Owner states
+  // ... (keep generic vars)
+
+  // NOTE: Keeping other controllers...
+
+  @override
+  void dispose() {
+    _pageController.dispose();
+    super.dispose();
+  }
+
+  // ... (keep _detectLocation, _addService, _handleFinish, _pick... methods)
+
+  @override
+  Widget build(BuildContext context) {
+    isDark = ref.watch(themeProvider);
+    return Scaffold(
+      extendBody: true,
+      resizeToAvoidBottomInset: true,
+      body: GradientBackground(
+        isDark: isDark,
+        child: SafeArea(
+          bottom: false,
+          child: PageView(
+            controller: _pageController,
+            physics: const BouncingScrollPhysics(), 
+            children: [
+              _buildCredentialsStep(),
+              _buildRoleStep(),
+              _buildDetailsPage(),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+
+  Widget _buildDetailsPage() {
+     if (_selectedRole == 'owner') {
+        return _buildOwnerDetailsStep();
+     } else if (_selectedRole == 'staff') {
+        return _buildStaffDetailsStep();
+     }
+     
+     // Fallback if user swipes without selecting role
+     return Center(
+       child: Column(
+         mainAxisAlignment: MainAxisAlignment.center,
+         children: [
+           Icon(LucideIcons.alertTriangle, size: 48, color: Colors.grey),
+           SizedBox(height: 16),
+           Text("Please select a role first", style: TextStyle(color: Colors.grey)),
+         ],
+       ),
+     );
+  }
   final TextEditingController _shopNameController = TextEditingController();
   final TextEditingController _pinCodeController = TextEditingController();
   final TextEditingController _addressController = TextEditingController();
@@ -49,10 +108,15 @@ class _RegistrationFlowScreenState extends ConsumerState<RegistrationFlowScreen>
   final TextEditingController _staffPhoneController = TextEditingController();
 
   // Credentials form states
-  final TextEditingController _nameController = TextEditingController();
-  final TextEditingController _emailController = TextEditingController();
+  late final TextEditingController _nameController;
   final TextEditingController _phoneController = TextEditingController();
-  final TextEditingController _passwordController = TextEditingController();
+
+  @override
+  void initState() {
+    super.initState();
+    final currentUser = ref.read(userProvider);
+    _nameController = TextEditingController(text: currentUser?.name ?? "");
+  }
 
   // Staff states
   final TextEditingController _expController = TextEditingController();
@@ -68,11 +132,22 @@ class _RegistrationFlowScreenState extends ConsumerState<RegistrationFlowScreen>
       serviceEnabled = await Geolocator.isLocationServiceEnabled();
       if (!serviceEnabled) {
         if (mounted) {
-          ScaffoldMessenger.of(context).showSnackBar(
-            const SnackBar(content: Text('Location services are disabled.')),
+          bool openSettings = await PremiumDialog.showConfirmation(
+            context: context,
+            title: "Location Services Disabled",
+            content: "Please enable location services to detect your shop's location.",
+            confirmText: "Open Settings",
+            icon: LucideIcons.mapPin,
+            iconColor: Colors.amber,
           );
+          
+          if (openSettings) {
+             await Geolocator.openLocationSettings();
+             // Optional: recursively try again or let user click button again?
+             // For now, let user click button again after enabling.
+          }
+          if (mounted) setState(() => _isLoading = false);
         }
-        if (mounted) setState(() => _isLoading = false);
         return;
       }
 
@@ -92,15 +167,32 @@ class _RegistrationFlowScreenState extends ConsumerState<RegistrationFlowScreen>
 
       if (permission == LocationPermission.deniedForever) {
         if (mounted) {
-          ScaffoldMessenger.of(context).showSnackBar(
-            const SnackBar(content: Text('Location permissions are permanently denied.')),
+           bool openSettings = await PremiumDialog.showConfirmation(
+            context: context,
+            title: "Permission Denied",
+            content: "Location permissions are permanently denied. Please enable them in app settings.",
+            confirmText: "Open Settings",
+            icon: LucideIcons.lock,
+            iconColor: Colors.red,
           );
+
+          if (openSettings) {
+            await Geolocator.openAppSettings();
+          }
           setState(() => _isLoading = false);
         }
         return;
       }
 
       Position position = await Geolocator.getCurrentPosition();
+      
+      List<Placemark> placemarks = [];
+      try {
+        placemarks = await placemarkFromCoordinates(position.latitude, position.longitude);
+      } catch (e) {
+        debugPrint("Geocoding failed manually: $e");
+        // Continue without address
+      }
       
       if (mounted) {
         setState(() {
@@ -109,10 +201,21 @@ class _RegistrationFlowScreenState extends ConsumerState<RegistrationFlowScreen>
             'lng': position.longitude,
           };
           _locationDetected = true;
+          
+          if (placemarks.isNotEmpty) {
+            try {
+              Placemark place = placemarks.first;
+              _addressController.text = "${place.street}, ${place.locality}, ${place.administrativeArea}, ${place.country}";
+              _pinCodeController.text = place.postalCode ?? "";
+            } catch (e) {
+              debugPrint("Error parsing placemark: $e");
+            }
+          }
+           
           _isLoading = false;
         });
         ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text('Location captured! You can now enter your address.')),
+          SnackBar(content: Text(placemarks.isNotEmpty ? 'Location & Address captured!' : 'Location captured!')),
         );
       }
     } catch (e) {
@@ -155,99 +258,125 @@ class _RegistrationFlowScreenState extends ConsumerState<RegistrationFlowScreen>
     setState(() => _isLoading = true);
     final apiService = ref.read(apiServiceProvider);
     final userProviderNotifier = ref.read(userProvider.notifier);
+    final currentUser = ref.read(userProvider);
+    
+    if (currentUser == null) {
+       ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text("User session not found. Please login again.")),
+      );
+       setState(() => _isLoading = false);
+       return;
+    }
 
     try {
-      // AUTO-COLLECT: If user typed staff/service info but forgot to click "Add", do it for them
+      User? effectiveUser = currentUser;
+      
+      // 1. Check if New Registration (Temp User)
+      if (currentUser.id == 'temp') {
+          print("[REG_FLOW] Registering new user...");
+          final registerData = {
+             'name': _nameController.text,
+             'role': _selectedRole == 'owner' ? 'OWNER' : 'BARBER', // 'staff' -> 'BARBER'
+             'email': null, // Optional, can add email field to UI later
+             'agreedToPrivacy': _agreedToPrivacy,
+             'agreedToTerms': _agreedToTerms,
+             'legalConsentName': _nameController.text,
+             'legalConsentPlace': _addressController.text.isNotEmpty ? _addressController.text : "Detected Location",
+             'legalConsentTimestamp': DateTime.now().toIso8601String(),
+          };
+          
+          final regResponse = await apiService.registerUser(currentUser.token!, registerData);
+          if (regResponse == null) throw Exception("Registration failed. Please try again.");
+          
+          final newUser = User.fromJson(regResponse['user']);
+          final newToken = regResponse['access_token'];
+          effectiveUser = newUser.copyWith(token: newToken);
+          
+          // Save real user session immediately
+          await userProviderNotifier.setUser(effectiveUser);
+          print("[REG_FLOW] User registered: ${effectiveUser.id}");
+      } else {
+          // Existing User Update (e.g. Customer -> Owner)
+          final profileData = {
+            'name': _nameController.text,
+            'agreedToPrivacy': _agreedToPrivacy,
+            'agreedToTerms': _agreedToTerms,
+            'legalConsentName': _nameController.text,
+            'legalConsentPlace': _addressController.text.isNotEmpty ? _addressController.text : "Detected Location",
+            'legalConsentTimestamp': DateTime.now().toIso8601String(),
+          };
+          final updatedUser = await apiService.updateProfile(currentUser.id, profileData);
+          if (updatedUser == null) throw Exception("Failed to update profile");
+          effectiveUser = updatedUser;
+          // Note: If upgrading role, backend permission/role update might be needed separately 
+          // but we continue with Shop Creation/Profile Update logic which should enforce role eventually.
+      }
+
+      // 2. Proceed with Role-Specific Setup using effectiveUser (Real ID)
       if (_selectedRole == 'owner') {
         if (_staffNameController.text.isNotEmpty && _staffPhoneController.text.isNotEmpty) {
-          print("[REG_FLOW] Auto-collecting leftover staff: ${_staffNameController.text}");
           _staff.add({
             'name': _staffNameController.text,
             'phone': _staffPhoneController.text,
           });
         }
         if (_serviceNameController.text.isNotEmpty && _servicePriceController.text.isNotEmpty) {
-           print("[REG_FLOW] Auto-collecting leftover service: ${_serviceNameController.text}");
           _services.add({
             'name': _serviceNameController.text,
             'price': double.tryParse(_servicePriceController.text) ?? 50.0,
             'duration': int.tryParse(_serviceDurationController.text) ?? 30,
           });
         }
-      }
 
-      final registerData = {
-        'name': _nameController.text,
-        'email': _emailController.text,
-        'phone': _phoneController.text,
-        'password': _passwordController.text,
-        'role': _selectedRole == 'owner' ? 'OWNER' : 'BARBER',
-      };
-
-      final authResponse = await apiService.register(registerData);
-      if (authResponse == null || authResponse['user'] == null) {
-        throw Exception("Registration failed");
-      }
-
-      final newUser = User.fromJson(authResponse['user']);
-      await userProviderNotifier.setUser(newUser);
-
-      // 2. Create Shop or Update Profile
-      if (_selectedRole == 'owner') {
-        print("[REG_FLOW] Starting shop creation for owner...");
+        print("[REG_FLOW] Starting shop creation for owner: ${effectiveUser.id}");
         
         // Upload shop photos
         List<String> photoUrls = [];
         if (_shopPhotos.isNotEmpty) {
-          print("[REG_FLOW] Uploading ${_shopPhotos.length} photos...");
           for (var photo in _shopPhotos) {
             final url = await apiService.uploadFile(photo);
-            if (url != null) {
-              photoUrls.add(url);
-            }
+            if (url != null) photoUrls.add(url);
           }
         }
-        
-        print("[REG_FLOW] Services to send: $_services");
-        print("[REG_FLOW] Staff to send: $_staff");
-        
+    
         final createData = {
           'name': _shopNameController.text,
           'address': _addressController.text,
           'description': "Professional Barber Shop",
           'coordinates': _detectedCoordinates ?? {'lat': 40.7128, 'lng': -74.0060},
-          'ownerId': newUser.id,
-          'phone': newUser.phone ?? _phoneController.text,
-          'email': newUser.email,
+          'ownerId': effectiveUser.id,
+          'phone': effectiveUser.phone.isNotEmpty ? effectiveUser.phone : _phoneController.text,
+          'email': effectiveUser.email,
           'services': _services,
           'staff': _staff,
           'photos': photoUrls,
         };
         
-        print("[REG_FLOW] Creating shop with data: $createData");
         final shopResult = await apiService.createShop(createData);
         if (shopResult == null) {
-          throw Exception("Registration successful, but shop creation failed. Please try again from settings.");
+          throw Exception("Shop creation failed.");
         }
+        
+        // Refetch/Update User Role to OWNER if not already
+        if (effectiveUser.role != AppRole.owner) {
+             final updatedOwner = effectiveUser.copyWith(role: AppRole.owner);
+             await userProviderNotifier.setUser(updatedOwner);
+        }
+
       } else {
-        // Handle staff profile completion
-        print("[REG_FLOW] Updating profile for staff...");
-        // Upload profile photo if exists
+        // Staff/Barber Flow
+        print("[REG_FLOW] Updating profile for staff: ${effectiveUser.id}");
+        
         String? profilePhotoUrl;
         if (_profilePhoto != null) {
-          print("[REG_FLOW] Uploading profile photo...");
           profilePhotoUrl = await apiService.uploadFile(_profilePhoto!);
         }
 
-        // Upload portfolio photos
         List<String> portfolioUrls = [];
         if (_portfolioPhotos.isNotEmpty) {
-          print("[REG_FLOW] Uploading ${_portfolioPhotos.length} portfolio photos...");
           for (var photo in _portfolioPhotos) {
             final url = await apiService.uploadFile(photo);
-            if (url != null) {
-              portfolioUrls.add(url);
-            }
+            if (url != null) portfolioUrls.add(url);
           }
         }
 
@@ -258,12 +387,22 @@ class _RegistrationFlowScreenState extends ConsumerState<RegistrationFlowScreen>
           'profilePhoto': profilePhotoUrl,
           'portfolio': portfolioUrls,
         };
-        await apiService.updateProfile(newUser.id, updateData);
+        
+        final finalStaffUser = await apiService.updateProfile(effectiveUser.id, updateData);
+        if (finalStaffUser != null) {
+           User userToPersist = finalStaffUser;
+           // If role is still customer, optimistic update to BARBER
+           if (finalStaffUser.role == AppRole.customer) {
+              userToPersist = finalStaffUser.copyWith(role: AppRole.barber);
+           }
+           await userProviderNotifier.setUser(userToPersist);
+        }
       }
       
       if (mounted) {
-        setState(() => _isLoading = false);
-        context.go('/barber');
+         setState(() => _isLoading = false);
+         // Navigate to Home
+         context.go('/barber');
       }
     } catch (e) {
       if (mounted) {
@@ -304,32 +443,7 @@ class _RegistrationFlowScreenState extends ConsumerState<RegistrationFlowScreen>
     }
   }
 
-  @override
-  Widget build(BuildContext context) {
-    isDark = ref.watch(themeProvider);
-    return Scaffold(
-      extendBody: true,
-      resizeToAvoidBottomInset: true,
-      body: GradientBackground(
-        isDark: isDark,
-        child: SafeArea(
-          bottom: false,
-          child: AnimatedSwitcher(
-            duration: const Duration(milliseconds: 400),
-            child: _buildCurrentStep(),
-          ),
-        ),
-      ),
-    );
-  }
 
-  Widget _buildCurrentStep() {
-    if (_step == 'credentials') return _buildCredentialsStep();
-    if (_step == 'role') return _buildRoleStep();
-    if (_step == 'owner_details') return _buildOwnerDetailsStep();
-    if (_step == 'staff_details') return _buildStaffDetailsStep();
-    return const SizedBox();
-  }
 
   Widget _buildCredentialsStep() {
     return SingleChildScrollView(
@@ -339,26 +453,17 @@ class _RegistrationFlowScreenState extends ConsumerState<RegistrationFlowScreen>
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            const SizedBox(height: 48),
-            const Text("Get Started", style: TextStyle(fontSize: 32, fontWeight: FontWeight.w900)),
-            const Text("Create your account to continue", style: TextStyle(fontSize: 16, color: Colors.grey)),
+            const Text("Complete Profile", style: TextStyle(fontSize: 32, fontWeight: FontWeight.w900)),
+            const Text("Tell us about yourself to continue", style: TextStyle(fontSize: 16, color: Colors.grey)),
             const SizedBox(height: 32),
             _buildInput("Full Name", "John Doe", _nameController),
-            const SizedBox(height: 16),
-            _buildInput("Email Address", "john@example.com", _emailController, keyboardType: TextInputType.emailAddress),
-            const SizedBox(height: 16),
-            _buildInput("Phone Number", "+1 234...", _phoneController, keyboardType: TextInputType.phone),
-            const SizedBox(height: 16),
-            _buildInput("Password", "********", _passwordController, keyboardType: TextInputType.visiblePassword),
             const SizedBox(height: 48),
             _buildPrimaryButton("NEXT STEP", () {
-              if (_nameController.text.isNotEmpty && 
-                  _emailController.text.isNotEmpty && 
-                  _passwordController.text.isNotEmpty) {
-                setState(() => _step = 'role');
+              if (_nameController.text.isNotEmpty) {
+                 _pageController.nextPage(duration: const Duration(milliseconds: 300), curve: Curves.easeInOut);
               } else {
                 ScaffoldMessenger.of(context).showSnackBar(
-                    const SnackBar(content: Text("Please fill all fields"))
+                    const SnackBar(content: Text("Please enter your name"))
                 );
               }
             }),
@@ -370,27 +475,21 @@ class _RegistrationFlowScreenState extends ConsumerState<RegistrationFlowScreen>
   }
 
   Widget _buildRoleStep() {
-    return SingleChildScrollView(
-      physics: const ClampingScrollPhysics(),
+    return Align(
+      alignment: Alignment.topCenter,
+      child: SingleChildScrollView(
+        physics: const ClampingScrollPhysics(),
       child: Padding(
         padding: const EdgeInsets.all(24.0),
         child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            _buildBackButton(() => setState(() => _step = 'credentials')),
-            const SizedBox(height: 24),
+            const Text("Select Your Role", style: TextStyle(fontSize: 32, fontWeight: FontWeight.w900)),
             const Text(
-              "Select Your Role",
-              style: TextStyle(fontSize: 32, fontWeight: FontWeight.w900),
+              "Are you a shop owner or a barber working in a shop?",
+              style: TextStyle(fontSize: 16, color: Colors.grey),
             ),
-            const SizedBox(height: 8),
-            Opacity(
-              opacity: 0.6,
-              child: const Text(
-                "Are you a shop owner or a barber working in a shop?",
-                textAlign: TextAlign.center,
-              ),
-            ),
-            const SizedBox(height: 48),
+            const SizedBox(height: 32),
             _buildRoleCard(
               "Shop Owner",
               "Create and manage your own shop",
@@ -398,7 +497,7 @@ class _RegistrationFlowScreenState extends ConsumerState<RegistrationFlowScreen>
               Colors.red,
               () => setState(() {
                 _selectedRole = 'owner';
-                _step = 'owner_details';
+                _pageController.nextPage(duration: const Duration(milliseconds: 300), curve: Curves.easeInOut);
               }),
             ),
             const SizedBox(height: 16),
@@ -409,11 +508,12 @@ class _RegistrationFlowScreenState extends ConsumerState<RegistrationFlowScreen>
               AppTheme.emerald,
               () => setState(() {
                 _selectedRole = 'staff';
-                _step = 'staff_details';
+                _pageController.nextPage(duration: const Duration(milliseconds: 300), curve: Curves.easeInOut);
               }),
             ),
           ],
         ),
+      ),
       ),
     );
   }
@@ -460,49 +560,54 @@ class _RegistrationFlowScreenState extends ConsumerState<RegistrationFlowScreen>
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            _buildBackButton(() => setState(() => _step = 'role')),
-            const SizedBox(height: 24),
-            const Text("Setup Your Shop", style: TextStyle(fontSize: 28, fontWeight: FontWeight.w900)),
-            const Opacity(opacity: 0.4, child: Text("Tell us about your business")),
+            const Text("Setup Your Shop", style: TextStyle(fontSize: 32, fontWeight: FontWeight.w900)),
+            const Text("Tell us about your business", style: TextStyle(fontSize: 16, color: Colors.grey)),
             const SizedBox(height: 32),
             _buildInput("Shop Name", "Enter business name", _shopNameController),
             const SizedBox(height: 16),
             Row(
               children: [
                 Expanded(
-                  child: InkWell(
-                    onTap: _detectLocation,
-                    child: Container(
-                      padding: const EdgeInsets.symmetric(vertical: 16),
-                      decoration: BoxDecoration(
-                        color: _locationDetected 
-                            ? AppTheme.emerald.withOpacity(0.12)
-                            : (isDark ? Colors.white : Colors.black).withOpacity(0.05),
-                        borderRadius: BorderRadius.circular(20),
-                        border: _locationDetected 
-                            ? Border.all(color: AppTheme.emerald.withOpacity(0.4), width: 1.5)
-                            : null,
-                      ),
-                      child: Row(
-                        mainAxisAlignment: MainAxisAlignment.center,
-                        children: [
-                          Icon(
-                            _locationDetected ? LucideIcons.checkCircle2 : LucideIcons.mapPin, 
-                            size: 18, 
-                            color: _locationDetected ? AppTheme.emerald : (isDark ? Colors.white : Colors.black)
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text("SHOP LOCATION", style: TextStyle(fontSize: 10, fontWeight: FontWeight.bold, color: (isDark ? Colors.white : Colors.black).withOpacity(0.4), letterSpacing: 1.5)),
+                      const SizedBox(height: 8),
+                      InkWell(
+                        onTap: _detectLocation,
+                        child: Container(
+                          padding: const EdgeInsets.symmetric(vertical: 16),
+                          decoration: BoxDecoration(
+                            color: _locationDetected 
+                                ? AppTheme.emerald.withOpacity(0.12)
+                                : (isDark ? Colors.white : Colors.black).withOpacity(0.05),
+                            borderRadius: BorderRadius.circular(20),
+                            border: _locationDetected 
+                                ? Border.all(color: AppTheme.emerald.withOpacity(0.4), width: 1.5)
+                                : null,
                           ),
-                          const SizedBox(width: 8),
-                          Text(
-                            _locationDetected ? "Location Ready" : "Detect Location", 
-                            style: TextStyle(
-                              fontWeight: FontWeight.bold, 
-                              fontSize: 13,
-                              color: _locationDetected ? AppTheme.emerald : (isDark ? Colors.white : Colors.black)
-                            )
+                          child: Row(
+                            mainAxisAlignment: MainAxisAlignment.center,
+                            children: [
+                              Icon(
+                                _locationDetected ? LucideIcons.checkCircle2 : LucideIcons.mapPin, 
+                                size: 18, 
+                                color: _locationDetected ? AppTheme.emerald : (isDark ? Colors.white : Colors.black)
+                              ),
+                              const SizedBox(width: 8),
+                              Text(
+                                _locationDetected ? "Location Ready" : "Detect Location", 
+                                style: TextStyle(
+                                  fontWeight: FontWeight.bold, 
+                                  fontSize: 13,
+                                  color: _locationDetected ? AppTheme.emerald : (isDark ? Colors.white : Colors.black)
+                                )
+                              ),
+                            ],
                           ),
-                        ],
+                        ),
                       ),
-                    ),
+                    ],
                   ),
                 ),
                 const SizedBox(width: 12),
@@ -586,8 +691,14 @@ class _RegistrationFlowScreenState extends ConsumerState<RegistrationFlowScreen>
               ),
             const SizedBox(height: 24),
             _buildAddStaffForm(),
+            const SizedBox(height: 32),
+            _buildLegalConsent(),
             const SizedBox(height: 48),
-            _buildPrimaryButton("CREATE SHOP & START", _handleFinish),
+            _buildPrimaryButton(
+              "CREATE SHOP & START", 
+              _handleFinish,
+              enabled: _agreedToPrivacy && _agreedToTerms,
+            ),
             const SizedBox(height: 40),
           ],
         ),
@@ -602,11 +713,9 @@ class _RegistrationFlowScreenState extends ConsumerState<RegistrationFlowScreen>
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          _buildBackButton(() => setState(() => _step = 'role')),
-          const SizedBox(height: 24),
-          const Text("Build Your Profile", style: TextStyle(fontSize: 28, fontWeight: FontWeight.w900)),
-          const Opacity(opacity: 0.4, child: Text("Link yourself to a nearby shop to start.")),
-          const SizedBox(height: 40),
+          const Text("Build Your Profile", style: TextStyle(fontSize: 32, fontWeight: FontWeight.w900)),
+          const Text("Link yourself to a nearby shop to start.", style: TextStyle(fontSize: 16, color: Colors.grey)),
+          const SizedBox(height: 32),
           Center(
             child: InkWell(
               onTap: _pickProfilePhoto,
@@ -684,27 +793,21 @@ class _RegistrationFlowScreenState extends ConsumerState<RegistrationFlowScreen>
               ],
             ),
           ),
+          const SizedBox(height: 32),
+          _buildLegalConsent(),
           const SizedBox(height: 48),
-          _buildPrimaryButton("JOIN SHOP & START", _handleFinish),
+          _buildPrimaryButton(
+            "JOIN SHOP & START", 
+            _handleFinish,
+            enabled: _agreedToPrivacy && _agreedToTerms,
+          ),
           const SizedBox(height: 40),
         ],
       ),
     );
   }
 
-  Widget _buildBackButton(VoidCallback onTap) {
-    return InkWell(
-      onTap: onTap,
-      child: Container(
-        padding: const EdgeInsets.all(12),
-        decoration: BoxDecoration(
-          color: isDark ? AppTheme.darkCardBG : AppTheme.lightCardBG,
-          borderRadius: BorderRadius.circular(16),
-        ),
-        child: const Icon(LucideIcons.arrowLeft, size: 20),
-      ),
-    );
-  }
+
 
   Widget _buildStaffTile(Map<String, dynamic> staff) {
     return Container(
@@ -888,18 +991,122 @@ class _RegistrationFlowScreenState extends ConsumerState<RegistrationFlowScreen>
     );
   }
 
-  Widget _buildPrimaryButton(String label, VoidCallback onTap) {
+  Widget _buildLegalConsent() {
+    final textColor = isDark ? Colors.white : Colors.black;
+    return Column(
+      children: [
+        InkWell(
+          onTap: () => setState(() => _agreedToPrivacy = !_agreedToPrivacy),
+          child: Row(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              SizedBox(
+                height: 24,
+                width: 24,
+                child: Checkbox(
+                  value: _agreedToPrivacy,
+                  onChanged: (v) => setState(() => _agreedToPrivacy = v ?? false),
+                  activeColor: AppTheme.emerald,
+                  shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(4)),
+                ),
+              ),
+              const SizedBox(width: 12),
+              Expanded(
+                child: RichText(
+                  text: TextSpan(
+                    style: TextStyle(fontSize: 13, color: textColor.withOpacity(0.6), height: 1.4),
+                    children: [
+                      const TextSpan(text: "I agree to the "),
+                      WidgetSpan(
+                        alignment: PlaceholderAlignment.middle,
+                        child: GestureDetector(
+                          onTap: () {
+                             PremiumDialog.showLegal(
+                               context: context, 
+                               title: 'Privacy Policy', 
+                               icon: LucideIcons.shield,
+                               content: 'At BarberBook24, we take your privacy seriously. By using this app, you consent to our data practices...'
+                             );
+                          },
+                          child: const Text(
+                            "Privacy Policy",
+                            style: TextStyle(fontWeight: FontWeight.bold, color: AppTheme.emerald, decoration: TextDecoration.underline),
+                          ),
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+              ),
+            ],
+          ),
+        ),
+        const SizedBox(height: 16),
+        InkWell(
+          onTap: () => setState(() => _agreedToTerms = !_agreedToTerms),
+          child: Row(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              SizedBox(
+                height: 24,
+                width: 24,
+                child: Checkbox(
+                  value: _agreedToTerms,
+                  onChanged: (v) => setState(() => _agreedToTerms = v ?? false),
+                  activeColor: AppTheme.emerald,
+                  shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(4)),
+                ),
+              ),
+              const SizedBox(width: 12),
+              Expanded(
+                child: RichText(
+                  text: TextSpan(
+                    style: TextStyle(fontSize: 13, color: textColor.withOpacity(0.6), height: 1.4),
+                    children: [
+                      const TextSpan(text: "I agree to the "),
+                      WidgetSpan(
+                        alignment: PlaceholderAlignment.middle,
+                        child: GestureDetector(
+                          onTap: () {
+                             PremiumDialog.showLegal(
+                               context: context, 
+                               title: 'Terms of Service', 
+                               icon: LucideIcons.scale,
+                               content: 'Welcome to BarberBook24. By using our services, you agree to follow our code of conduct and service terms...'
+                             );
+                          },
+                          child: const Text(
+                            "Terms of Service",
+                            style: TextStyle(fontWeight: FontWeight.bold, color: AppTheme.emerald, decoration: TextDecoration.underline),
+                          ),
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+              ),
+            ],
+          ),
+        ),
+      ],
+    );
+  }
+
+  Widget _buildPrimaryButton(String label, VoidCallback onTap, {bool enabled = true}) {
+    final bool isActuallyEnabled = enabled && !_isLoading;
     return SizedBox(
       width: double.infinity,
       child: ElevatedButton(
         style: ElevatedButton.styleFrom(
-          backgroundColor: AppTheme.darkButton,
-          foregroundColor: Colors.white,
+          backgroundColor: isActuallyEnabled 
+              ? (isDark ? AppTheme.darkButton : AppTheme.lightButton)
+              : (isDark ? Colors.white.withOpacity(0.1) : Colors.black.withOpacity(0.1)),
+          foregroundColor: isActuallyEnabled ? Colors.white : (isDark ? Colors.white.withOpacity(0.3) : Colors.black.withOpacity(0.3)),
           minimumSize: const Size(double.infinity, 64),
           shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
-          elevation: 0,
+          elevation: isActuallyEnabled ? 4 : 0,
         ),
-        onPressed: _isLoading ? null : onTap,
+        onPressed: isActuallyEnabled ? onTap : null,
         child: _isLoading
             ? const SizedBox(width: 24, height: 24, child: CircularProgressIndicator(color: Colors.white, strokeWidth: 2))
             : Text(label, style: const TextStyle(fontSize: 16, fontWeight: FontWeight.w900)),

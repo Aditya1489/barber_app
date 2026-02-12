@@ -647,9 +647,7 @@ class _ShopPreviewScreenState extends ConsumerState<ShopPreviewScreen> {
                 ? ClipRRect(
                     borderRadius: BorderRadius.circular(12),
                     child: Image.network(
-                      service['imageUrl'].startsWith('http') 
-                          ? service['imageUrl'] 
-                          : 'http://192.168.0.100:8000${service['imageUrl']}',
+                      ref.read(apiServiceProvider).resolveUrl(service['imageUrl']) ?? '',
                       fit: BoxFit.cover,
                       errorBuilder: (context, error, stackTrace) {
                         return Container(

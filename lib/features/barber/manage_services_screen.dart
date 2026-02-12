@@ -8,6 +8,7 @@ import 'package:barber_sync/widgets/gradient_background.dart';
 import 'package:barber_sync/core/theme/app_theme.dart';
 import 'package:barber_sync/core/providers/theme_provider.dart';
 import 'package:barber_sync/services/api_service.dart';
+import 'package:barber_sync/widgets/premium_dialog_helper.dart';
 
 
 class ManageServicesScreen extends ConsumerStatefulWidget {
@@ -114,7 +115,7 @@ class _ManageServicesScreenState extends ConsumerState<ManageServicesScreen> {
                             ? ClipRRect(
                                 borderRadius: BorderRadius.circular(16),
                                 child: Image.network(
-                                  imageUrl.startsWith('http') ? imageUrl : 'http://192.168.0.100:8000$imageUrl',
+                                  ref.read(apiServiceProvider).resolveUrl(imageUrl) ?? 'https://via.placeholder.com/150',
                                   fit: BoxFit.cover,
                                 ),
                               )
@@ -259,16 +260,13 @@ class _ManageServicesScreenState extends ConsumerState<ManageServicesScreen> {
   }
 
   Future<void> _deleteService(String serviceId) async {
-    final confirm = await showDialog<bool>(
+    final confirm = await PremiumDialog.showConfirmation(
       context: context,
-      builder: (context) => AlertDialog(
-        title: const Text('Delete Service?'),
-        content: const Text('This action cannot be undone.'),
-        actions: [
-          TextButton(onPressed: () => Navigator.pop(context, false), child: const Text('Cancel')),
-          TextButton(onPressed: () => Navigator.pop(context, true), child: const Text('Delete', style: TextStyle(color: Colors.red))),
-        ],
-      ),
+      title: 'Delete Service?',
+      content: 'This action cannot be undone. This service will be removed from your shop menu.',
+      confirmText: 'Delete',
+      confirmColor: Colors.red,
+      icon: LucideIcons.trash2,
     );
 
     if (confirm == true) {
@@ -351,15 +349,6 @@ class _ManageServicesScreenState extends ConsumerState<ManageServicesScreen> {
   }
 
   Widget _buildServiceCard(bool isDark, Map<String, dynamic> service) {
-    // Helper to convert relative URL to full URL
-    String getFullImageUrl(String? imageUrl) {
-      if (imageUrl == null) return '';
-      if (imageUrl.startsWith('http')) return imageUrl; // Already full URL
-      // Relative path - prepend base URL
-      final baseUrl = 'http://192.168.0.100:8000';
-      return '$baseUrl$imageUrl';
-    }
-
     return Container(
       margin: const EdgeInsets.only(bottom: 16),
       padding: const EdgeInsets.all(20),
@@ -377,11 +366,11 @@ class _ManageServicesScreenState extends ConsumerState<ManageServicesScreen> {
               borderRadius: BorderRadius.circular(16),
               color: Colors.grey.withOpacity(0.1),
             ),
-            child: service['imageUrl'] != null
+              child: service['imageUrl'] != null
                 ? ClipRRect(
                     borderRadius: BorderRadius.circular(16),
                     child: Image.network(
-                      getFullImageUrl(service['imageUrl']),
+                      ref.read(apiServiceProvider).resolveUrl(service['imageUrl']) ?? '',
                       fit: BoxFit.cover,
                       errorBuilder: (context, error, stackTrace) {
                         // Fallback to scissors icon if image fails to load

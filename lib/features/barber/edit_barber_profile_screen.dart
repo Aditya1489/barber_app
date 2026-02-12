@@ -585,17 +585,28 @@ class _EditBarberProfileScreenState extends ConsumerState<EditBarberProfileScree
         TextFormField(
           controller: _descController,
           maxLines: null,
+          minLines: 4,
           maxLength: 150,
+          textAlignVertical: TextAlignVertical.top,
           buildCounter: (context, {required currentLength, required isFocused, maxLength}) => null,
           style: TextStyle(color: isDark ? Colors.white : Colors.black, fontSize: 15),
           decoration: InputDecoration(
             hintText: "E.g. 10+ years experience in modern fades & beard styling. I specialize in precision scissor cuts.",
             hintStyle: TextStyle(color: (isDark ? Colors.white : Colors.black).withOpacity(0.3), fontSize: 13),
-            prefixIcon: Icon(LucideIcons.fileText, color: (isDark ? Colors.white : Colors.black).withOpacity(0.4)),
+            prefixIcon: Column(
+              mainAxisAlignment: MainAxisAlignment.start,
+              children: [
+                Padding(
+                  padding: const EdgeInsets.only(top: 18),
+                  child: Icon(LucideIcons.fileText, color: (isDark ? Colors.white : Colors.black).withOpacity(0.4)),
+                ),
+              ],
+            ),
+            prefixIconConstraints: const BoxConstraints(minWidth: 50),
             filled: true,
             fillColor: isDark ? AppTheme.darkCardBG : AppTheme.lightCardBG,
             border: OutlineInputBorder(borderRadius: BorderRadius.circular(20), borderSide: BorderSide.none),
-            contentPadding: const EdgeInsets.all(20),
+            contentPadding: const EdgeInsets.fromLTRB(16, 20, 20, 20),
           ),
         ),
       ],

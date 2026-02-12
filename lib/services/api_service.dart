@@ -4,17 +4,48 @@ import 'package:barber_sync/models/models.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:barber_sync/core/config/app_config.dart';
 import 'package:barber_sync/core/utils/logger.dart';
+import 'package:shared_preferences/shared_preferences.dart';
+import 'dart:convert';
 
 final apiServiceProvider = Provider((ref) => ApiService());
 
 class ApiService {
-  final Dio _dio = Dio(BaseOptions(
-    baseUrl: Platform.isAndroid 
-        ? AppConfig.getBaseUrl() 
-        : AppConfig.getIosBaseUrl(),
-    connectTimeout: Duration(seconds: AppConfig.connectTimeoutSeconds),
-    receiveTimeout: Duration(seconds: AppConfig.receiveTimeoutSeconds),
-  ));
+  late final Dio _dio;
+
+  ApiService() {
+    _dio = Dio(BaseOptions(
+      baseUrl: Platform.isAndroid 
+          ? AppConfig.getBaseUrl() 
+          : AppConfig.getIosBaseUrl(),
+      connectTimeout: Duration(seconds: AppConfig.connectTimeoutSeconds),
+      receiveTimeout: Duration(seconds: AppConfig.receiveTimeoutSeconds),
+    ));
+
+    _dio.interceptors.add(InterceptorsWrapper(
+      onRequest: (options, handler) async {
+        // Add Auth Token
+        final prefs = await SharedPreferences.getInstance();
+        final userJson = prefs.getString('auth_user');
+        if (userJson != null) {
+          try {
+            final userMap = jsonDecode(userJson);
+            final token = userMap['token'];
+            if (token != null) {
+              print('DEBUG: Attaching token: ${token.substring(0, 10)}...');
+              options.headers['Authorization'] = 'Bearer $token';
+            } else {
+              print('DEBUG: No token found in stored user data.');
+            }
+          } catch (e) {
+            print('DEBUG: Error parsing stored user: $e');
+          }
+        } else {
+          print('DEBUG: No stored user found.');
+        }
+        return handler.next(options);
+      },
+    ));
+  }
   
   String get baseUrl => _dio.options.baseUrl.replaceAll('/api/v1', '');
 
@@ -34,35 +65,91 @@ class ApiService {
     return '$baseUrl$cleanPath';
   }
 
-  Future<Map<String, dynamic>?> login(String email, String password) async {
-    if (email.isEmpty || password.isEmpty) {
-      AppLogger.error('Login called with empty email or password');
-      return null;
-    }
+  // OTP Authentication
+  Future<bool> requestOtp(String phone) async {
     try {
-      final response = await _dio.post('/auth/login', data: {
-        'email': email,
-        'password': password,
+      final response = await _dio.post('/auth/otp/request', data: {
+        'phone': phone,
+      });
+      return response.statusCode == 200;
+    } catch (e) {
+      AppLogger.error('Error requesting OTP', e);
+      return false;
+    }
+  }
+
+  Future<Map<String, dynamic>?> verifyOtp(String phone, String code) async {
+    try {
+      final response = await _dio.post('/auth/otp/verify', data: {
+        'phone': phone,
+        'code': code,
       });
       if (response.statusCode == 200) {
         return response.data;
       }
       return null;
     } catch (e) {
-      AppLogger.error('Error logging in', e);
+      AppLogger.error('Error verifying OTP', e);
       return null;
     }
   }
 
-  Future<Map<String, dynamic>?> register(Map<String, dynamic> data) async {
+  // OTP Update Phone
+  Future<bool> requestUpdateOtp(String newPhone) async {
     try {
-      final response = await _dio.post('/auth/register', data: data);
-      if (response.statusCode == 201) {
+      final response = await _dio.post('/auth/otp/request-update', data: {
+        'new_phone': newPhone,
+      });
+      return response.statusCode == 200;
+    } catch (e) {
+      AppLogger.error('Error requesting update OTP', e);
+      return false;
+    }
+  }
+
+  Future<bool> verifyUpdateOtp(String newPhone, String code) async {
+    try {
+      final response = await _dio.post('/auth/otp/verify-update', data: {
+        'new_phone': newPhone,
+        'code': code,
+      });
+      return response.statusCode == 200;
+    } catch (e) {
+      AppLogger.error('Error verifying update OTP', e);
+      return false;
+    }
+  }
+
+  Future<Map<String, dynamic>?> selectRole(String userId, String role, String? shopId) async {
+    try {
+      final response = await _dio.post('/auth/login/select-role', data: {
+        'user_id': userId,
+        'role': role,
+        'shop_id': shopId,
+      });
+      if (response.statusCode == 200) {
         return response.data;
       }
       return null;
     } catch (e) {
-      AppLogger.error('Error registering', e);
+      AppLogger.error('Error selecting role', e);
+      return null;
+    }
+  }
+
+  Future<Map<String, dynamic>?> registerUser(String token, Map<String, dynamic> data) async {
+    try {
+      final response = await _dio.post(
+        '/auth/register', 
+        data: data,
+        options: Options(headers: {'Authorization': 'Bearer $token'}),
+      );
+      if (response.statusCode == 200) {
+        return response.data;
+      }
+      return null;
+    } catch (e) {
+      AppLogger.error('Error registering user', e);
       return null;
     }
   }
@@ -515,6 +602,20 @@ class ApiService {
     } catch (e) {
       AppLogger.error('Error fetching audit trail: $e', e);
       return [];
+    }
+  }
+
+  Future<bool> overrideBooking(String bookingId, String ownerId, String reason, String newStatus) async {
+    try {
+      final response = await _dio.post('/bookings/$bookingId/override', queryParameters: {
+        'owner_id': ownerId,
+        'reason': reason,
+        'new_status': newStatus,
+      });
+      return response.statusCode == 200;
+    } catch (e) {
+      AppLogger.error('Error overriding booking: $e');
+      return false;
     }
   }
 }

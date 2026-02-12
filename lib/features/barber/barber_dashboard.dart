@@ -11,11 +11,13 @@ import 'package:barber_sync/core/providers/user_provider.dart';
 import 'package:barber_sync/core/providers/theme_provider.dart';
 import 'package:barber_sync/services/api_service.dart';
 import 'package:barber_sync/models/models.dart';
-
+import 'package:barber_sync/widgets/appointment_card.dart';
+import 'package:barber_sync/features/barber/owner_supervision_screen.dart';
 import 'package:barber_sync/services/notification_service.dart';
 import 'package:intl/intl.dart';
 import 'package:fl_chart/fl_chart.dart';
 import 'package:flutter_animate/flutter_animate.dart';
+import 'package:barber_sync/widgets/premium_dialog_helper.dart';
 
 class BarberDashboardScreen extends ConsumerStatefulWidget {
   const BarberDashboardScreen({super.key});
@@ -609,7 +611,7 @@ class _BarberDashboardScreenState extends ConsumerState<BarberDashboardScreen> {
         Expanded(
           child: RefreshIndicator(
             onRefresh: _loadData,
-            color: AppTheme.emerald,
+            color: isDark ? AppTheme.emerald : Colors.blue,
             child: SingleChildScrollView(
               physics: const AlwaysScrollableScrollPhysics(),
             padding: const EdgeInsets.fromLTRB(16, 8, 16, 24),
@@ -665,7 +667,7 @@ class _BarberDashboardScreenState extends ConsumerState<BarberDashboardScreen> {
       ),
     ],
   );
-}
+  }
 
   Widget _buildPerformanceStreakCard(bool isDark) {
      return Container(
@@ -912,8 +914,8 @@ class _BarberDashboardScreenState extends ConsumerState<BarberDashboardScreen> {
       ),
     ),
   ),
-);
-}
+  );
+  }
 
   Widget _buildStatItem(bool isDark, IconData icon, String value, String label, Color color) {
     return Expanded(
@@ -1063,7 +1065,66 @@ class _BarberDashboardScreenState extends ConsumerState<BarberDashboardScreen> {
           ],
         ),
         const SizedBox(height: 16),
-        _buildStatCard(isDark, "Total Earnings", "\$$earningsLabel", LucideIcons.dollarSign, Colors.amber),
+        _buildStatCard(isDark, "Total Earnings", "\$$earningsLabel", LucideIcons.dollarSign, AppTheme.emerald),
+        const SizedBox(height: 16),
+        Container(
+          padding: const EdgeInsets.all(20),
+          decoration: BoxDecoration(
+            color: (isDark ? AppTheme.darkCardBG : Colors.white),
+            borderRadius: BorderRadius.circular(24),
+            border: Border.all(
+              color: (pendingCount > 0) ? Colors.red.withOpacity(0.3) : AppTheme.emerald.withOpacity(0.3),
+              width: 1.5
+            ),
+            boxShadow: [
+               BoxShadow(color: Colors.black.withOpacity(isDark ? 0.2 : 0.05), blurRadius: 15, offset: const Offset(0, 8))
+            ]
+          ),
+          child: Row(
+            children: [
+              Container(
+                padding: const EdgeInsets.all(12),
+                decoration: BoxDecoration(
+                  color: (pendingCount > 0 ? Colors.red : AppTheme.emerald).withOpacity(0.1),
+                  shape: BoxShape.circle
+                ),
+                child: Icon(
+                  pendingCount > 0 ? LucideIcons.alertTriangle : LucideIcons.shieldCheck,
+                  color: pendingCount > 0 ? Colors.red : AppTheme.emerald,
+                  size: 20
+                ),
+              ),
+              const SizedBox(width: 20),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      pendingCount > 0 ? "NEEDS ATTENTION" : "SYSTEM HEALTHY",
+                      style: TextStyle(
+                        fontSize: 10, 
+                        fontWeight: FontWeight.w900, 
+                        letterSpacing: 1.2, 
+                        color: pendingCount > 0 ? Colors.red : AppTheme.emerald
+                      ),
+                    ),
+                    const SizedBox(height: 4),
+                    Text(
+                      pendingCount > 0 ? "Some bookings require intervention" : "Everything is running smoothly",
+                      style: TextStyle(
+                        fontSize: 13, 
+                        fontWeight: FontWeight.w600, 
+                        color: (isDark ? Colors.white : Colors.black).withOpacity(0.5)
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+              if (pendingCount > 0)
+                const Icon(LucideIcons.chevronRight, size: 16, color: Colors.grey),
+            ],
+          ),
+        ),
       ],
     );
   }
@@ -1261,7 +1322,21 @@ class _BarberDashboardScreenState extends ConsumerState<BarberDashboardScreen> {
         const SizedBox(height: 16),
         ...pendingAppts.take(5).map((appt) => Padding(
           padding: const EdgeInsets.only(bottom: 16),
-          child: _buildRequestCard(isDark, appt),
+          child: AppointmentCard(
+            appointment: appt,
+            isDark: isDark,
+            activeTab: 'Requests',
+            getServiceNames: _getServiceNames,
+            getClientLoyalty: _getClientLoyalty,
+            onAccept: () async {
+               final success = await ref.read(apiServiceProvider).updateBookingStatus(appt.id, "AWAITING_CUSTOMER_CONFIRMATION");
+               if (success) _loadData();
+            },
+            onReject: () async {
+                final success = await ref.read(apiServiceProvider).updateBookingStatus(appt.id, "CANCELLED_BY_BARBER");
+                if (success) _loadData();
+            },
+          ),
         )).toList(),
       ],
     );
@@ -1458,32 +1533,14 @@ class _BarberDashboardScreenState extends ConsumerState<BarberDashboardScreen> {
         }
       }
 
-      showDialog(
+      PremiumDialog.showConfirmation(
         context: context,
-        builder: (context) {
-          final isDark = ref.read(themeProvider);
-          return AlertDialog(
-            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
-            backgroundColor: isDark ? AppTheme.darkCardBG : Colors.white,
-            title: const Text("Time Status", style: TextStyle(fontWeight: FontWeight.bold)),
-            content: Column(
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                Icon(LucideIcons.clock, size: 48, color: AppTheme.darkAccent),
-                const SizedBox(height: 16),
-                Text(message, textAlign: TextAlign.center, style: const TextStyle(fontSize: 18, fontWeight: FontWeight.bold)),
-                const SizedBox(height: 8),
-                Text("Scheduled for: ${appt.timeSlot}", style: TextStyle(color: (isDark ? Colors.white : Colors.black).withOpacity(0.4))),
-              ],
-            ),
-            actions: [
-              TextButton(
-                onPressed: () => Navigator.pop(context),
-                child: const Text("CLOSE", style: TextStyle(fontWeight: FontWeight.bold)),
-              )
-            ],
-          );
-        },
+        title: "Time Status",
+        content: "$message\nScheduled for: ${appt.timeSlot}",
+        confirmText: "Got it",
+        icon: LucideIcons.clock,
+        iconColor: AppTheme.darkAccent,
+        isAlert: true,
       );
     } catch (e) {
       print("Error calculating time: $e");
@@ -1493,143 +1550,37 @@ class _BarberDashboardScreenState extends ConsumerState<BarberDashboardScreen> {
     }
   }
 
-  Widget _buildRequestCard(bool isDark, Appointment appt) {
-    return ClipRRect(
-      borderRadius: BorderRadius.circular(24),
-      child: BackdropFilter(
-        filter: ImageFilter.blur(sigmaX: 10, sigmaY: 10),
-        child: Container(
-          decoration: BoxDecoration(
-            color: isDark ? AppTheme.darkCardBG.withOpacity(0.4) : AppTheme.lightCardBG.withOpacity(0.8),
-            borderRadius: BorderRadius.circular(24),
-            border: isDark ? Border.all(color: Colors.white.withOpacity(0.05)) : Border.all(color: Colors.black.withOpacity(0.05)),
-          ),
-          child: Column(
+
+
+  Widget _buildTasksTab(bool isDark) {
+    final user = ref.read(userProvider);
+    if (user?.role == AppRole.owner) {
+      final staffList = (_shopProfile?['staff'] as List?)
+              ?.map((e) => Staff.fromJson(Map<String, dynamic>.from(e)))
+              .toList() ??
+          [];
+      return Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          Padding(
-            padding: const EdgeInsets.fromLTRB(16, 16, 16, 12),
-            child: Row(
-              children: [
-                UserAvatar(
-                  radius: 26,
-                  photoUrl: appt.customerPhoto,
-                  name: appt.customerName ?? "Customer",
-                ),
-                const SizedBox(width: 16),
-                Expanded(
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      Row(
-                        mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                        children: [
-                          Text(appt.customerName ?? "Customer", style: const TextStyle(fontSize: 16, fontWeight: FontWeight.w900)),
-                          Text("\$${appt.totalAmount.toStringAsFixed(0)}", style: const TextStyle(fontWeight: FontWeight.w900, color: AppTheme.emerald, fontSize: 16)),
-                        ],
-                      ),
-                      const SizedBox(height: 2),
-                      Text(
-                        _getServiceNames(appt.services), 
-                        maxLines: 1,
-                        overflow: TextOverflow.ellipsis,
-                        style: TextStyle(fontSize: 12, color: (isDark ? Colors.white : Colors.black).withOpacity(0.5)),
-                      ),
-                    ],
-                  ),
-                ),
-              ],
-            ),
+          _buildScreenHeader(
+            isDark, 
+            title: "Supervision",
+            subtitle: "Exception management",
           ),
-          Container(
-            padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
-            decoration: BoxDecoration(
-              color: (isDark ? Colors.white : Colors.black).withOpacity(0.03),
-            ),
-            child: Row(
-              mainAxisAlignment: MainAxisAlignment.spaceBetween,
-              children: [
-                Row(
-                  children: [
-                    Icon(LucideIcons.calendar, size: 12, color: AppTheme.darkAccent),
-                    const SizedBox(width: 6),
-                    Text(appt.date, style: const TextStyle(fontSize: 11, fontWeight: FontWeight.bold)),
-                    const SizedBox(width: 12),
-                    Icon(LucideIcons.clock, size: 12, color: AppTheme.darkAccent),
-                    const SizedBox(width: 6),
-                    Text(appt.timeSlot, style: const TextStyle(fontSize: 11, fontWeight: FontWeight.bold)),
-                  ],
-                ),
-                Text(
-                  "NEEDS APPROVAL",
-                  style: TextStyle(fontSize: 9, fontWeight: FontWeight.w900, color: AppTheme.darkAccent.withOpacity(0.8), letterSpacing: 0.5),
-                ),
-              ],
-            ),
-          ),
-          Padding(
-            padding: const EdgeInsets.all(8),
-            child: Row(
-              children: [
-                Expanded(
-                  child: InkWell(
-                    onTap: () async {
-                       final success = await ref.read(apiServiceProvider).updateBookingStatus(appt.id, "AWAITING_CUSTOMER_CONFIRMATION");
-                       if (success) _loadData();
-                    },
-                    borderRadius: BorderRadius.circular(16),
-                    child: Container(
-                      padding: const EdgeInsets.symmetric(vertical: 12),
-                      decoration: BoxDecoration(
-                        color: AppTheme.emerald.withOpacity(0.1),
-                        borderRadius: BorderRadius.circular(16),
-                      ),
-                      alignment: Alignment.center,
-                      child: const Text("ACCEPT", style: TextStyle(color: AppTheme.emerald, fontWeight: FontWeight.w900, fontSize: 11, letterSpacing: 1)),
-                    ),
-                  ),
-                ),
-                const SizedBox(width: 8),
-                InkWell(
-                  onTap: () async {
-                      final success = await ref.read(apiServiceProvider).updateBookingStatus(appt.id, "CANCELLED_BY_BARBER");
-                     if (success) _loadData();
-                  },
-                  borderRadius: BorderRadius.circular(16),
-                  child: Container(
-                    padding: const EdgeInsets.all(12),
-                    decoration: BoxDecoration(
-                      color: Colors.red.withOpacity(0.1),
-                      borderRadius: BorderRadius.circular(16),
-                    ),
-                    child: const Icon(LucideIcons.x, color: Colors.red, size: 16),
-                  ),
-                ),
-              ],
+          Expanded(
+            child: OwnerSupervisionScreen(
+              appointments: _appointments,
+              staff: staffList,
+              isDark: isDark,
+              onRefresh: _loadData,
+              getServiceNames: _getServiceNames,
+              getClientLoyalty: _getClientLoyalty,
             ),
           ),
         ],
-      ),
-    ),
-  ),
-);
-}
+      );
+    }
 
-  Widget _buildIconButton(IconData icon, Color color, VoidCallback onTap) {
-    return InkWell(
-      onTap: onTap,
-      borderRadius: BorderRadius.circular(8),
-      child: Container(
-        padding: const EdgeInsets.all(8),
-        decoration: BoxDecoration(
-          color: color.withOpacity(0.1),
-          borderRadius: BorderRadius.circular(8),
-        ),
-        child: Icon(icon, color: color, size: 18),
-      ),
-    );
-  }
-
-  Widget _buildTasksTab(bool isDark) {
     final pendingAppts = _appointments.where((a) => a.status == AppointmentStatus.pending).toList();
     final upcomingAppts = _appointments.where((a) => 
       a.status == AppointmentStatus.confirmed || 
@@ -1645,11 +1596,9 @@ class _BarberDashboardScreenState extends ConsumerState<BarberDashboardScreen> {
     List<Appointment> currentList;
     if (_activeTaskTab == 'Requests') {
       currentList = pendingAppts;
-      // Apply filters for Requests
       if (_selectedServiceFilters.isNotEmpty) {
         currentList = currentList.where((appt) => appt.services.any((sId) => _selectedServiceFilters.contains(sId))).toList();
       }
-      // Apply sorting for Requests
       if (_sortBy == 'Recently Booked') {
         currentList.sort((a, b) => b.bookedAt.compareTo(a.bookedAt));
       } else if (_sortBy == 'Highest Amount') {
@@ -1672,7 +1621,7 @@ class _BarberDashboardScreenState extends ConsumerState<BarberDashboardScreen> {
       });
     } else if (_activeTaskTab == 'Completed') {
       currentList = completedAppts;
-      currentList.sort((a, b) => b.date.compareTo(a.date)); // Most recent first
+      currentList.sort((a, b) => b.date.compareTo(a.date));
     } else {
       currentList = noShowAppts;
       currentList.sort((a, b) => b.date.compareTo(a.date));
@@ -1708,6 +1657,11 @@ class _BarberDashboardScreenState extends ConsumerState<BarberDashboardScreen> {
         ),
         Padding(
           padding: const EdgeInsets.symmetric(horizontal: 16.0),
+          child: _buildSummaryCards(isDark, pendingAppts.length, upcomingAppts.length, noShowAppts.length),
+        ),
+        const SizedBox(height: 24),
+        Padding(
+          padding: const EdgeInsets.symmetric(horizontal: 16.0),
           child: _buildTabSwitcher(
             isDark: isDark, 
             items: ["Requests", "Upcoming", "Completed", "Missed"],
@@ -1731,54 +1685,69 @@ class _BarberDashboardScreenState extends ConsumerState<BarberDashboardScreen> {
             ),
           ),
 
-        const SizedBox(height: 24),
+        const SizedBox(height: 16),
         Expanded(
           child: RefreshIndicator(
             onRefresh: _loadData,
-            color: AppTheme.emerald,
+            color: isDark ? AppTheme.emerald : Colors.blue,
             child: Padding(
               padding: const EdgeInsets.symmetric(horizontal: 16.0),
               child: currentList.isEmpty 
-                ? SingleChildScrollView(
-                    physics: const AlwaysScrollableScrollPhysics(),
-                    child: Container(
-                      height: MediaQuery.of(context).size.height * 0.6,
-                      alignment: Alignment.center,
-                      child: Column(
-                        mainAxisAlignment: MainAxisAlignment.center,
-                        children: [
-                          Icon(
-                            _activeTaskTab == 'Requests' ? LucideIcons.bellPlus : 
-                            _activeTaskTab == 'Upcoming' ? LucideIcons.calendar :
-                            LucideIcons.hardDrive, 
-                            size: 64, 
-                            color: (isDark ? Colors.white : Colors.black).withOpacity(0.1)
-                          ),
-                          const SizedBox(height: 16),
-                          Text("No $_activeTaskTab appointments", style: TextStyle(color: (isDark ? Colors.white : Colors.black).withOpacity(0.4))),
-                        ],
-                      ),
-                    ),
-                  )
+                ? _buildPremiumEmptyState(isDark)
                 : ListView.builder(
                     padding: const EdgeInsets.only(bottom: 20),
                     physics: const AlwaysScrollableScrollPhysics(),
                     itemCount: currentList.length,
                     itemBuilder: (context, index) {
                       final appt = currentList[index];
-                      if (_activeTaskTab == 'Requests') {
-                        return Padding(
-                          padding: const EdgeInsets.only(bottom: 16),
-                          child: _buildRequestCard(isDark, appt),
+                      final card = AppointmentCard(
+                        appointment: appt,
+                        isDark: isDark,
+                        index: index,
+                        activeTab: _activeTaskTab,
+                        getServiceNames: _getServiceNames,
+                        getClientLoyalty: _getClientLoyalty,
+                        onAccept: () async {
+                           final success = await ref.read(apiServiceProvider).updateBookingStatus(appt.id, "AWAITING_CUSTOMER_CONFIRMATION");
+                           if (success) _loadData();
+                        },
+                        onReject: () async {
+                            final success = await ref.read(apiServiceProvider).updateBookingStatus(appt.id, "CANCELLED_BY_BARBER");
+                            if (success) _loadData();
+                        },
+                        onAddNote: () => _showAddNoteDialog(appt),
+                        onReportIssue: () {},
+                      );
+
+                      if (_activeTaskTab == 'Upcoming') {
+                        return Dismissible(
+                          key: Key(appt.id),
+                          direction: DismissDirection.horizontal,
+                          onDismissed: (direction) {
+                            if (direction == DismissDirection.startToEnd) {
+                              _markAsCompleted(appt);
+                            } else {
+                              _markAsNoShow(appt);
+                            }
+                          },
+                          background: Container(
+                            margin: const EdgeInsets.only(bottom: 16),
+                            decoration: BoxDecoration(color: AppTheme.emerald, borderRadius: BorderRadius.circular(32)),
+                            alignment: Alignment.centerLeft,
+                            padding: const EdgeInsets.only(left: 32),
+                            child: const Icon(LucideIcons.check, color: Colors.white, size: 32),
+                          ),
+                          secondaryBackground: Container(
+                            margin: const EdgeInsets.only(bottom: 16),
+                            decoration: BoxDecoration(color: Colors.red, borderRadius: BorderRadius.circular(32)),
+                            alignment: Alignment.centerRight,
+                            padding: const EdgeInsets.only(right: 32),
+                            child: const Icon(LucideIcons.x, color: Colors.white, size: 32),
+                          ),
+                          child: card,
                         );
                       }
-                      
-                      // Add swipe gestures for Appointments and Upcoming
-                      if (_activeTaskTab == 'Upcoming') {
-                        return _buildSwipeableTaskCard(isDark, appt, index);
-                      }
-                      
-                      return _buildTaskCard(isDark, appt, index);
+                      return card;
                     },
                   ),
             ),
@@ -1788,210 +1757,89 @@ class _BarberDashboardScreenState extends ConsumerState<BarberDashboardScreen> {
     );
   }
 
-
-  Widget _buildSwipeableTaskCard(bool isDark, Appointment appt, int index) {
-    return Dismissible(
-      key: Key(appt.id),
-      direction: DismissDirection.horizontal,
-      onDismissed: (direction) {
-        if (direction == DismissDirection.startToEnd) {
-          _markAsCompleted(appt);
-        } else {
-          _markAsNoShow(appt);
-        }
-      },
-      background: Container(
-        margin: const EdgeInsets.only(bottom: 16),
-        decoration: BoxDecoration(color: AppTheme.emerald, borderRadius: BorderRadius.circular(32)),
-        alignment: Alignment.centerLeft,
-        padding: const EdgeInsets.only(left: 32),
-        child: const Icon(LucideIcons.check, color: Colors.white, size: 32),
-      ),
-      secondaryBackground: Container(
-        margin: const EdgeInsets.only(bottom: 16),
-        decoration: BoxDecoration(color: Colors.red, borderRadius: BorderRadius.circular(32)),
-        alignment: Alignment.centerRight,
-        padding: const EdgeInsets.only(right: 32),
-        child: const Icon(LucideIcons.x, color: Colors.white, size: 32),
-      ),
-      child: _buildTaskCard(isDark, appt, index),
+  Widget _buildSummaryCards(bool isDark, int pending, int upcoming, int missed) {
+    return Row(
+      children: [
+        Expanded(child: _buildSummaryItem(isDark, "Pending", pending.toString(), LucideIcons.bell, Colors.amber)),
+        const SizedBox(width: 12),
+        Expanded(child: _buildSummaryItem(isDark, "Upcoming", upcoming.toString(), LucideIcons.calendar, Colors.blue)),
+        const SizedBox(width: 12),
+        Expanded(child: _buildSummaryItem(isDark, "Exceptions", missed.toString(), LucideIcons.alertCircle, Colors.red)),
+      ],
     );
   }
 
-  Widget _buildTaskCard(bool isDark, Appointment appt, int index) {
-    final today = DateFormat('yyyy-MM-dd').format(DateTime.now());
-    bool isToday = appt.date == today;
-    bool isCurrent = isToday && index == 0 && _activeTaskTab == 'Upcoming';
-    final loyalty = _getClientLoyalty(appt.customerId);
-    
+  Widget _buildSummaryItem(bool isDark, String label, String value, IconData icon, Color color) {
     return Container(
-      margin: const EdgeInsets.only(bottom: 16),
-      padding: const EdgeInsets.all(20),
+      padding: const EdgeInsets.symmetric(vertical: 20, horizontal: 12),
       decoration: BoxDecoration(
-        color: isDark ? AppTheme.darkCardBG : AppTheme.lightCardBG,
-        borderRadius: BorderRadius.circular(32),
-        border: isCurrent ? Border.all(color: Colors.amber, width: 2) : null,
-        boxShadow: isCurrent ? [BoxShadow(color: Colors.amber.withOpacity(0.2), blurRadius: 15, spreadRadius: 2)] : null,
+        color: isDark ? AppTheme.darkCardBG : Colors.white,
+        borderRadius: BorderRadius.circular(24),
+        boxShadow: [
+          BoxShadow(
+            color: Colors.black.withOpacity(isDark ? 0.2 : 0.05),
+            blurRadius: 15,
+            offset: const Offset(0, 8),
+          )
+        ],
+        border: Border.all(color: color.withOpacity(0.05)),
       ),
       child: Column(
         children: [
-          Row(
-            mainAxisAlignment: MainAxisAlignment.spaceBetween,
-            children: [
-              Row(
-                children: [
-                  Container(
-                    width: 8, height: 8,
-                    decoration: BoxDecoration(color: isCurrent ? Colors.amber : Colors.blue, shape: BoxShape.circle),
-                  ).animate(onPlay: (c) => c.repeat()).scale(duration: 1000.ms, begin: const Offset(0.8, 0.8), end: const Offset(1.2, 1.2)).then().scale(begin: const Offset(1.2, 1.2), end: const Offset(0.8, 0.8)),
-                  const SizedBox(width: 8),
-                  Text(appt.timeSlot, style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 13)),
-                  const SizedBox(width: 12),
-                  _loyaltyBadge(loyalty),
-                ],
-              ),
-              Container(
-                padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
-                decoration: BoxDecoration(
-                  color: (isCurrent ? Colors.amber : Colors.blue).withOpacity(0.1),
-                  borderRadius: BorderRadius.circular(6),
-                ),
-                child: Text(
-                  _activeTaskTab == 'Completed' ? "COMPLETED" : 
-                  _activeTaskTab == 'Missed' ? "NO SHOW" :
-                  appt.status == AppointmentStatus.awaitingCustomerConfirmation ? "PENDING PAYMENT" :
-                  isCurrent ? "CURRENT" : "UPCOMING",
-                  style: TextStyle(
-                    fontSize: 9, 
-                    fontWeight: FontWeight.bold, 
-                    color: _activeTaskTab == 'Missed' ? Colors.red : (appt.status == AppointmentStatus.awaitingCustomerConfirmation ? Colors.orange : (isCurrent ? Colors.amber : Colors.blue))),
-                ),
-              ),
-            ],
+          Container(
+            padding: const EdgeInsets.all(10),
+            decoration: BoxDecoration(color: color.withOpacity(0.1), shape: BoxShape.circle),
+            child: Icon(icon, color: color, size: 18),
           ),
-          const SizedBox(height: 20),
-          Row(
-            children: [
-              UserAvatar(radius: 28, photoUrl: appt.customerPhoto, name: appt.customerName ?? "Customer"),
-              const SizedBox(width: 16),
-              Expanded(
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Text(appt.customerName ?? "Customer", style: const TextStyle(fontSize: 18, fontWeight: FontWeight.bold)),
-                    const SizedBox(height: 4),
-                    Row(
-                      children: [
-                        Icon(LucideIcons.scissors, size: 12, color: (isDark ? Colors.white : Colors.black).withOpacity(0.4)),
-                        const SizedBox(width: 4),
-                        Expanded(child: Text(_getServiceNames(appt.services), style: TextStyle(fontSize: 12, color: (isDark ? Colors.white : Colors.black).withOpacity(0.6)), maxLines: 1, overflow: TextOverflow.ellipsis)),
-                      ],
-                    ),
-                    const SizedBox(height: 4),
-                    Row(
-                      children: [
-                        Icon(LucideIcons.clock, size: 12, color: (isDark ? Colors.white : Colors.black).withOpacity(0.4)),
-                        const SizedBox(width: 4),
-                        Text("${appt.totalDuration} min", style: TextStyle(fontSize: 11, color: (isDark ? Colors.white : Colors.black).withOpacity(0.4))),
-                        const SizedBox(width: 12),
-                        Icon(LucideIcons.dollarSign, size: 12, color: AppTheme.emerald),
-                        const SizedBox(width: 2),
-                        Text("\$${appt.totalAmount.toStringAsFixed(0)}", style: const TextStyle(fontSize: 11, fontWeight: FontWeight.bold, color: AppTheme.emerald)),
-                      ],
-                    ),
-                  ],
-                ),
-              ),
-            ],
-          ),
-          if (appt.privateNotes != null) ...[
-             const SizedBox(height: 16),
-             Container(
-               width: double.infinity,
-               padding: const EdgeInsets.all(12),
-               decoration: BoxDecoration(color: Colors.amber.withOpacity(0.05), borderRadius: BorderRadius.circular(16), border: Border.all(color: Colors.amber.withOpacity(0.1))),
-               child: Column(
-                 crossAxisAlignment: CrossAxisAlignment.start,
-                 children: [
-                   const Row(
-                     children: [
-                       Icon(LucideIcons.stickyNote, size: 12, color: Colors.amber),
-                       SizedBox(width: 4),
-                       Text("PRIVATE NOTE", style: TextStyle(fontSize: 9, fontWeight: FontWeight.w900, color: Colors.amber, letterSpacing: 0.5)),
-                     ],
-                   ),
-                   const SizedBox(height: 4),
-                   Text(appt.privateNotes!, style: TextStyle(fontSize: 12, color: (isDark ? Colors.white : Colors.black).withOpacity(0.7), fontStyle: FontStyle.italic)),
-                 ],
-               ),
-             ),
-          ],
-          const SizedBox(height: 20),
-          Row(
-            children: [
-              if (_activeTaskTab == 'Upcoming' || isCurrent)
-                Expanded(
-                  child: OutlinedButton.icon(
-                    onPressed: () => _showAddNoteDialog(appt),
-                    icon: const Icon(LucideIcons.plus, size: 14),
-                    label: const Text("ADD NOTE", style: TextStyle(fontSize: 10, fontWeight: FontWeight.bold)),
-                    style: OutlinedButton.styleFrom(
-                      padding: const EdgeInsets.symmetric(vertical: 12),
-                      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
-                      side: BorderSide(color: (isDark ? Colors.white : Colors.black).withOpacity(0.1)),
-                    ),
-                  ),
-                ),
-              if (_activeTaskTab == 'Upcoming' || isCurrent) const SizedBox(width: 12),
-              if (_activeTaskTab == 'Upcoming' || isCurrent)
-                Expanded(
-                  child: OutlinedButton.icon(
-                    onPressed: () {},
-                    icon: const Icon(LucideIcons.flag, size: 14),
-                    label: const Text("REPORT ISSUE", style: TextStyle(fontSize: 10, fontWeight: FontWeight.bold)),
-                    style: OutlinedButton.styleFrom(
-                      foregroundColor: Colors.red,
-                      padding: const EdgeInsets.symmetric(vertical: 12),
-                      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
-                      side: BorderSide(color: Colors.red.withOpacity(0.1)),
-                    ),
-                  ),
-                ),
-            ],
-          ),
-          if (_activeTaskTab == 'Missed') ...[
-             const SizedBox(height: 16),
-             Container(
-               padding: const EdgeInsets.all(12),
-               decoration: BoxDecoration(color: Colors.red.withOpacity(0.05), borderRadius: BorderRadius.circular(16)),
-               child: Row(
-                 children: [
-                   const Icon(LucideIcons.alertTriangle, color: Colors.red, size: 16),
-                   const SizedBox(width: 12),
-                   Expanded(
-                     child: Text("Lost Potential: \$${appt.totalAmount.toStringAsFixed(0)} · Affects your visibility rating", style: const TextStyle(fontSize: 11, color: Colors.red, fontWeight: FontWeight.bold)),
-                   ),
-                 ],
-               ),
-             ),
-          ],
+          const SizedBox(height: 16),
+          Text(value, style: const TextStyle(fontSize: 24, fontWeight: FontWeight.w900, letterSpacing: -1)),
+          const SizedBox(height: 4),
+          Text(label.toUpperCase(), style: TextStyle(fontSize: 8, fontWeight: FontWeight.w900, color: (isDark ? Colors.white : Colors.black).withOpacity(0.4), letterSpacing: 0.8)),
         ],
       ),
-    ).animate().fadeIn().slideX(begin: 0.1);
-  }
-
-  Widget _loyaltyBadge(String status) {
-    Color color = Colors.grey;
-    if (status == "Loyal") color = AppTheme.emerald;
-    if (status == "Returning") color = Colors.blue;
-    if (status == "First-time") color = Colors.amber;
-
-    return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
-      decoration: BoxDecoration(color: color.withOpacity(0.1), borderRadius: BorderRadius.circular(20)),
-      child: Text(status.toUpperCase(), style: TextStyle(color: color, fontSize: 8, fontWeight: FontWeight.w900, letterSpacing: 0.5)),
     );
   }
+
+  Widget _buildPremiumEmptyState(bool isDark) {
+    return SingleChildScrollView(
+      physics: const AlwaysScrollableScrollPhysics(),
+      child: Container(
+        height: MediaQuery.of(context).size.height * 0.5,
+        alignment: Alignment.center,
+        child: Column(
+          mainAxisAlignment: MainAxisAlignment.center,
+          children: [
+            Container(
+              padding: const EdgeInsets.all(32),
+              decoration: BoxDecoration(
+                color: (isDark ? Colors.white : Colors.black).withOpacity(0.02),
+                shape: BoxShape.circle,
+              ),
+              child: Icon(
+                _activeTaskTab == 'Requests' ? LucideIcons.clipboardCheck : 
+                _activeTaskTab == 'Upcoming' ? LucideIcons.calendarCheck :
+                LucideIcons.checkCircle2, 
+                size: 64, 
+                color: (isDark ? Colors.white : Colors.black).withOpacity(0.1)
+              ),
+            ),
+            const SizedBox(height: 24),
+            Text(
+              "All caught up!",
+              style: TextStyle(fontSize: 18, fontWeight: FontWeight.w900, color: (isDark ? Colors.white : Colors.black).withOpacity(0.8), letterSpacing: -0.5),
+            ),
+            const SizedBox(height: 8),
+            Text(
+              "No ${_activeTaskTab.toLowerCase()} to show right now.",
+              style: TextStyle(fontSize: 13, color: (isDark ? Colors.white : Colors.black).withOpacity(0.4)),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+
 
   void _showAddNoteDialog(Appointment appt) {
      final controller = TextEditingController(text: appt.privateNotes);
@@ -2058,7 +1906,7 @@ class _BarberDashboardScreenState extends ConsumerState<BarberDashboardScreen> {
         Expanded(
           child: RefreshIndicator(
             onRefresh: _loadData,
-            color: AppTheme.emerald,
+            color: isDark ? AppTheme.emerald : Colors.blue,
             child: SingleChildScrollView(
               physics: const AlwaysScrollableScrollPhysics(),
             padding: const EdgeInsets.only(bottom: 20, left: 16, right: 16),
@@ -2121,7 +1969,7 @@ class _BarberDashboardScreenState extends ConsumerState<BarberDashboardScreen> {
       ),
     ],
   );
-}
+  }
 
   Widget _buildSummaryCarousel(bool isDark, double total, int count, double avg) {
     final cards = [
@@ -2574,7 +2422,7 @@ class _BarberDashboardScreenState extends ConsumerState<BarberDashboardScreen> {
       children: [
         _buildScreenHeader(
           isDark,
-          title: user != null ? (user.role == AppRole.owner ? "Owner Profile" : "Barber Profile") : "Profile",
+          title: user != null ? (user.role == AppRole.owner ? "Shop Profile" : "Barber Profile") : "Profile",
           subtitle: "My Account",
           trailing: InkWell(
             onTap: () => ref.read(themeProvider.notifier).state = !isDark,
@@ -2588,7 +2436,7 @@ class _BarberDashboardScreenState extends ConsumerState<BarberDashboardScreen> {
         Expanded(
           child: RefreshIndicator(
             onRefresh: _loadData,
-            color: AppTheme.emerald,
+            color: isDark ? AppTheme.emerald : Colors.blue,
             child: CustomScrollView(
               physics: const AlwaysScrollableScrollPhysics(),
               slivers: [
@@ -2707,30 +2555,70 @@ class _BarberDashboardScreenState extends ConsumerState<BarberDashboardScreen> {
                   ),
                   const SizedBox(height: 0),
                   _buildProfileItem(isDark, LucideIcons.fileText, "Privacy Policy", Colors.grey, onTap: () {
-                    showAboutDialog(context: context, applicationName: 'BarberBook24', children: [const Text('Privacy Policy details...')]);
+                    PremiumDialog.showLegal(
+                      context: context, 
+                      title: 'Privacy Policy', 
+                      icon: LucideIcons.shield,
+                      signatureName: user.legalConsentName,
+                      signaturePlace: user.legalConsentPlace,
+                      signatureTimestamp: user.legalConsentTimestamp,
+                      content: '''
+At BarberBook24, we take your privacy seriously. This policy outlines how we handle your data:
+
+1. DATA COLLECTION
+We collect your name, phone number, and shop details to provide our booking services. Location data is used only for shop discovery and reverse geocoding.
+
+2. SECURITY
+Your data is encrypted and stored securely. We do not sell your personal information to third parties.
+
+3. YOUR RIGHTS
+You can request to delete your account and all associated data at any time via the "Delete Account" option.
+
+4. UPDATES
+We may update this policy occasionally. Continued use of the app constitutes acceptance of any changes.'''
+                    );
                   }),
                   _buildProfileItem(isDark, LucideIcons.scale, "Terms of Service", Colors.grey, onTap: () {
-                    showAboutDialog(context: context, applicationName: 'BarberBook24', children: [const Text('Terms of service details...')]);
-                  }),
-                  _buildProfileItem(isDark, LucideIcons.trash2, "Delete Account", Colors.red, onTap: () {
-                    showDialog(
-                      context: context,
-                      builder: (context) => AlertDialog(
-                        title: const Text('Delete Account?'),
-                        content: const Text('This action is permanent and will remove all your data.'),
-                        actions: [
-                          TextButton(onPressed: () => Navigator.pop(context), child: const Text('Cancel')),
-                          TextButton(
-                            onPressed: () async {
-                              await ref.read(userProvider.notifier).logout();
-                              Navigator.pop(context);
-                              context.go('/login');
-                            },
-                            child: const Text('Delete', style: TextStyle(color: Colors.red)),
-                          ),
-                        ],
-                      ),
+                    PremiumDialog.showLegal(
+                      context: context, 
+                      title: 'Terms of Service', 
+                      icon: LucideIcons.scale,
+                      signatureName: user.legalConsentName,
+                      signaturePlace: user.legalConsentPlace,
+                      signatureTimestamp: user.legalConsentTimestamp,
+                      content: '''
+Welcome to BarberBook24. By using our platform, you agree to these terms:
+
+1. SERVICE AGREEMENT
+BarberBook24 is a marketplace connecting customers and barbers. We are not responsible for the quality of services provided by individual barbers.
+
+2. BOOKING POLICIES
+Cancellations should be made at least 2 hours in advance. No-shows may result in restricted access to the platform.
+
+3. CODE OF CONDUCT
+Users must treat each other with respect. Harassment or inappropriate behavior will result in immediate account termination.
+
+4. PLATFORM FEES
+We may charge a small platform fee for each booking to maintain the service. These fees are non-refundable.
+
+5. LIABILITY
+BarberBook24 is not liable for any direct or indirect damages resulting from the use of our services.'''
                     );
+                  }),
+                  _buildProfileItem(isDark, LucideIcons.trash2, "Delete Account", Colors.red, onTap: () async {
+                    final confirm = await PremiumDialog.showConfirmation(
+                      context: context,
+                      title: 'Delete Account?',
+                      content: 'This action is permanent and will remove all your data.',
+                      confirmText: 'Delete',
+                      confirmColor: Colors.red,
+                      icon: LucideIcons.trash2,
+                    );
+                    
+                    if (confirm && mounted) {
+                      await ref.read(userProvider.notifier).logout();
+                      context.go('/login');
+                    }
                   }),
                 ],
                 
@@ -2764,9 +2652,9 @@ class _BarberDashboardScreenState extends ConsumerState<BarberDashboardScreen> {
       ),
     ),
   ),
-],
-);
-}
+          ],
+        );
+      }
 
   Widget _buildProfileCompletionMeter(bool isDark) {
     // Calculate profile completion dynamically
@@ -3184,7 +3072,7 @@ class _BarberDashboardScreenState extends ConsumerState<BarberDashboardScreen> {
             mainAxisAlignment: MainAxisAlignment.spaceEvenly,
             children: [
               _buildNavItem(isDark, 0, LucideIcons.layoutDashboard, "DASHBOARD"),
-              _buildNavItem(isDark, 1, LucideIcons.checkSquare, "APPOINTMENTS"),
+              _buildNavItem(isDark, 1, LucideIcons.checkSquare, (ref.read(userProvider)?.role == AppRole.owner) ? "SUPERVISION" : "APPOINTMENTS"),
               _buildNavItem(isDark, 2, LucideIcons.wallet, "EARNINGS"),
               _buildNavItem(isDark, 3, LucideIcons.store, "PROFILE"),
             ],
@@ -3505,6 +3393,7 @@ class _NotificationsPopupContentState extends ConsumerState<_NotificationsPopupC
                     )
                   : RefreshIndicator(
                       onRefresh: _loadNotifications,
+                      color: widget.isDark ? AppTheme.emerald : Colors.blue,
                       child: ListView.builder(
                         controller: widget.scrollController,
                         padding: const EdgeInsets.symmetric(horizontal: 24),

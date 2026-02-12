@@ -54,6 +54,7 @@ class _StaffReviewsScreenState extends ConsumerState<StaffReviewsScreen> {
           ? const Center(child: CircularProgressIndicator())
           : RefreshIndicator(
               onRefresh: _loadReviews,
+              color: isDark ? const Color(0xFF10B981) : Colors.blue,
               child: CustomScrollView(
                 slivers: [
                   // Stats Header
